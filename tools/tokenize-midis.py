@@ -178,28 +178,30 @@ def get_tokenizer(params=None):
 
     return tokenizer
 
+
 # begin program
 
+# initializes tokenizer
+TOKENIZER = get_tokenizer()
+MIDI_COLLECTION = get_collection()
+MIDI_TITLES = [name for name, _doc in MIDI_COLLECTION.items()]
 
 if args.process:
-    # initializes tokenizer
-    tokenizer = get_tokenizer()
-    midi_collection = get_collection()
-
     logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
-        midi_collection.items()))
+        MIDI_COLLECTION.items()))
 
     Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
 
-    for midi_name, midi_doc in tqdm(midi_collection.items()):
+    for midi_name in tqdm(MIDI_TITLES):
         try:
+            midi_doc = MIDI_COLLECTION[midi_name]
             midi = midi_doc['midi']
             programs = midi_doc['programs']
 
-            tokens = tokenizer.midi_to_tokens(
+            tokens = TOKENIZER.midi_to_tokens(
                 midi, apply_bpe_if_possible=args.bpe)
 
-            tokenizer.save_tokens(
+            TOKENIZER.save_tokens(
                 tokens, f'{args.tokens_path}/{midi_name}.json', programs=programs)
         except KeyboardInterrupt:
             break
@@ -207,39 +209,41 @@ if args.process:
             logger.error(e)
 
     logger.info('Vocab size (no BPE): {vocab_size}',
-                vocab_size=len(tokenizer.vocab))
+                vocab_size=len(TOKENIZER.vocab))
     logger.info('Saving params...')
 
     """ !IMPORTANT always store the _vocab_base when saving params. 
-    Order of keys in the vocab may differ in a new instance of a preloaded tokenizer. """
-    tokenizer.save_params(
-        f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', {'_vocab_base': tokenizer.vocab})
+    Order of keys in the vocab may differ in a new instance of a preloaded TOKENIZER. """
+    TOKENIZER.save_params(
+        f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', {'_vocab_base': TOKENIZER.vocab})
 
 if args.bpe:
     # Constructs the vocabulary with BPE, from the tokenized files
     tokens_bpe_path = f'{args.tokens_path}/bpe'
-    token_files_paths = Path(args.tokens_path).glob(f'{args.midis_glob}.json')
+    token_files_paths = [
+        f'{args.tokens_path}/{midi_name}.json' for midi_name in MIDI_TITLES]
 
     Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
     if not args.process:
-        tokenizer = get_tokenizer(
+        TOKENIZER = get_tokenizer(
             params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
 
     logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
-        tokenizer.vocab))
-    tokenizer.learn_bpe(
-        vocab_size=int(len(tokenizer.vocab)*1.25),
+        TOKENIZER.vocab))
+
+    TOKENIZER.learn_bpe(
+        vocab_size=int(len(TOKENIZER.vocab)*1.25),
         tokens_paths=token_files_paths,
         start_from_empty_voc=False,
     )
 
     # Converts the tokenized musics into tokens with BPE
     logger.info('Applying BPE...')
-    tokenizer.apply_bpe_to_dataset(args.tokens_path, tokens_bpe_path)
+    TOKENIZER.apply_bpe_to_dataset(args.tokens_path, tokens_bpe_path)
 
     logger.info('Saving params with BPE applied...')
-    tokenizer.save_params(f'{tokens_bpe_path}/{TOKEN_PARAMS_NAME}')
+    TOKENIZER.save_params(f'{tokens_bpe_path}/{TOKEN_PARAMS_NAME}')
 
     logger.info('Vocab size (BPE): {vocab_size}',
-                vocab_size=len(tokenizer.vocab))
+                vocab_size=len(TOKENIZER.vocab))
