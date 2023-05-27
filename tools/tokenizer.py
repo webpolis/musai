@@ -32,6 +32,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+import json
 import os
 import re
 import argparse
@@ -70,7 +71,7 @@ arg_parser.add_argument('-m', '--midis_path', default=MIDIS_PATH,
 arg_parser.add_argument('-g', '--midis_glob', default='*mix*.mid',
                         help='The glob pattern used to locate MIDI files', type=str)
 arg_parser.add_argument('-b', '--bpe', help='Applies BPE to the corpora of tokens',
-                        action='store_true', default=True)
+                        action='store_true', default=False)
 arg_parser.add_argument('-p', '--process', help='Extracts tokens from the MIDI files',
                         action='store_true', default=False)
 arg_parser.add_argument('-s', '--semantical', help='Analyze corpora and process semantical grouping',
@@ -84,7 +85,6 @@ logger.add('tokenizer_errors_{time}.log', delay=True,
            backtrace=True, diagnose=True, level='ERROR', rotation='10 MB')
 
 # define some functions
-
 
 def get_collection():
     """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
@@ -145,7 +145,7 @@ def get_collection():
     return MIDI_COLLECTION
 
 
-def get_tokenizer(params=None):
+def get_tokenizer(params=None, algo='MMM'):
     """Returns a tokenizer.
 
     :param params: Path to a token_params.cfg file for preloading, defaults to None
@@ -153,7 +153,7 @@ def get_tokenizer(params=None):
     :return: A MMM or REMIPlus tokenizer.
     :rtype: MIDITokenizer
     """
-    if args.algo not in TOKENIZER_ALGOS:
+    if algo not in TOKENIZER_ALGOS:
         raise 'Invalid tokenization algorithm'
 
     additional_tokens = ADDITIONAL_TOKENS
@@ -163,87 +163,104 @@ def get_tokenizer(params=None):
     additional_tokens['nb_tempos'] = BINS_TEMPO
     tokenizer = None
 
-    if args.algo == 'REMI':
+    if algo == 'REMI':
         tokenizer = REMIPlus(pitch_range=PITCH_RANGE,
                              additional_tokens=additional_tokens,
                              nb_velocities=BINS_VELOCITY,
                              params=params)
-    elif args.algo == 'MMM':
+    elif algo == 'MMM':
         tokenizer = MMM(pitch_range=PITCH_RANGE,
                         additional_tokens=additional_tokens,
                         nb_velocities=BINS_VELOCITY,
                         params=params)
 
-    logger.info('Tokenizer initialized. Using {algo}', algo=args.algo)
+    logger.info('Tokenizer initialized. Using {algo}', algo=algo)
 
     return tokenizer
 
 
 # begin program
+if args:
+    # initializes tokenizer
+    TOKENIZER = get_tokenizer()
+    MIDI_COLLECTION = get_collection()
+    MIDI_TITLES = [name for name, _doc in MIDI_COLLECTION.items()]
 
-# initializes tokenizer
-TOKENIZER = get_tokenizer()
-MIDI_COLLECTION = get_collection()
-MIDI_TITLES = [name for name, _doc in MIDI_COLLECTION.items()]
+    if args.process:
+        logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
+            MIDI_COLLECTION.items()))
 
-if args.process:
-    logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
-        MIDI_COLLECTION.items()))
+        Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
 
-    Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
+        for midi_name in tqdm(MIDI_TITLES):
+            try:
+                midi_doc = MIDI_COLLECTION[midi_name]
+                midi = midi_doc['midi']
+                programs = midi_doc['programs']
 
-    for midi_name in tqdm(MIDI_TITLES):
-        try:
-            midi_doc = MIDI_COLLECTION[midi_name]
-            midi = midi_doc['midi']
-            programs = midi_doc['programs']
+                tokens = TOKENIZER.midi_to_tokens(
+                    midi, apply_bpe_if_possible=args.bpe)
 
-            tokens = TOKENIZER.midi_to_tokens(
-                midi, apply_bpe_if_possible=args.bpe)
+                TOKENIZER.save_tokens(
+                    tokens, f'{args.tokens_path}/{midi_name}.json', programs=programs)
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                logger.error(e)
 
-            TOKENIZER.save_tokens(
-                tokens, f'{args.tokens_path}/{midi_name}.json', programs=programs)
-        except KeyboardInterrupt:
-            break
-        except Exception as e:
-            logger.error(e)
+        logger.info('Vocab size (no BPE): {vocab_size}',
+                    vocab_size=len(TOKENIZER.vocab))
+        logger.info('Saving params...')
 
-    logger.info('Vocab size (no BPE): {vocab_size}',
-                vocab_size=len(TOKENIZER.vocab))
-    logger.info('Saving params...')
+        """ !IMPORTANT always store the _vocab_base when saving params. 
+        Order of keys in the vocab may differ in a new instance of a preloaded TOKENIZER. """
+        TOKENIZER.save_params(
+            f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', {'_vocab_base': TOKENIZER.vocab})
 
-    """ !IMPORTANT always store the _vocab_base when saving params. 
-    Order of keys in the vocab may differ in a new instance of a preloaded TOKENIZER. """
-    TOKENIZER.save_params(
-        f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', {'_vocab_base': TOKENIZER.vocab})
+    if args.bpe:
+        # Constructs the vocabulary with BPE, from the tokenized files
+        tokens_bpe_path = f'{args.tokens_path}/bpe'
+        token_files_paths = [
+            f'{args.tokens_path}/{midi_name}.json' for midi_name in MIDI_TITLES]
 
-if args.bpe:
-    # Constructs the vocabulary with BPE, from the tokenized files
-    tokens_bpe_path = f'{args.tokens_path}/bpe'
-    token_files_paths = [
-        f'{args.tokens_path}/{midi_name}.json' for midi_name in MIDI_TITLES]
+        Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
-    Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
+        if not args.process:
+            TOKENIZER = get_tokenizer(
+                params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
 
-    if not args.process:
-        TOKENIZER = get_tokenizer(
-            params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
+        logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
+            TOKENIZER.vocab))
 
-    logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
-        TOKENIZER.vocab))
+        TOKENIZER.learn_bpe(
+            vocab_size=int(len(TOKENIZER.vocab)*1.25),
+            tokens_paths=token_files_paths,
+            start_from_empty_voc=False,
+        )
 
-    TOKENIZER.learn_bpe(
-        vocab_size=int(len(TOKENIZER.vocab)*1.25),
-        tokens_paths=token_files_paths,
-        start_from_empty_voc=False,
-    )
+        # Converts the tokenized musics into tokens with BPE
+        logger.info('Applying BPE...')
+        TOKENIZER.apply_bpe_to_dataset(args.tokens_path, tokens_bpe_path)
 
-    # Converts the tokenized musics into tokens with BPE
-    logger.info('Applying BPE...')
-    TOKENIZER.apply_bpe_to_dataset(args.tokens_path, tokens_bpe_path)
+        logger.info('Saving params with BPE applied...')
+        TOKENIZER.save_params(f'{tokens_bpe_path}/{TOKEN_PARAMS_NAME}')
 
-    logger.info('Saving params with BPE applied...')
-    TOKENIZER.save_params(f'{tokens_bpe_path}/{TOKEN_PARAMS_NAME}')
+        logger.info('Vocab size (BPE): {vocab_size}',
+                    vocab_size=len(TOKENIZER.vocab))
 
-    logger.info('Vocab size (BPE): {vocab_size}',
-                vocab_size=len(TOKENIZER.vocab))
+    if args.semantical:
+        logger.info('Semantical processing: {collection_size} documents', collection_size=len(
+            MIDI_COLLECTION.items()))
+
+        token_files_paths = [
+            f'{args.tokens_path}/{midi_name}.json' for midi_name in MIDI_TITLES]
+
+        for token_file in tqdm(token_files_paths):
+            try:
+                tokens = json.load(open(token_file, 'r'))['ids']
+
+                pass
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                logger.error(e)
