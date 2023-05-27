@@ -1,0 +1,6 @@
+*.mid
+__pycache__
+.ipynb_checkpoints
+lightning_logs/
+*.pth
+*.log
