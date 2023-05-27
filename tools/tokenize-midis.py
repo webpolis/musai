@@ -80,7 +80,7 @@ arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
 args = arg_parser.parse_args()
 
 # initialize logger
-logger.add('tokenizer_errors_{time}.log',
+logger.add('tokenizer_errors_{time}.log', delay=True,
            backtrace=True, diagnose=True, level='ERROR', rotation='10 MB')
 
 # define some functions
@@ -206,8 +206,9 @@ if args.process:
         except Exception as e:
             logger.error(e)
 
-    print(f'Vocab size (no BPE): {len(tokenizer.vocab)}')
-    print('Saving params...')
+    logger.info('Vocab size (no BPE): {vocab_size}',
+                vocab_size=len(tokenizer.vocab))
+    logger.info('Saving params...')
 
     """ !IMPORTANT always store the _vocab_base when saving params. 
     Order of keys in the vocab may differ in a new instance of a preloaded tokenizer. """
@@ -225,7 +226,8 @@ if args.bpe:
         tokenizer = get_tokenizer(
             params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
 
-    print(f'Learning BPE from vocab size {len(tokenizer.vocab)}...')
+    logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
+        tokenizer.vocab))
     tokenizer.learn_bpe(
         vocab_size=int(len(tokenizer.vocab)*1.25),
         tokens_paths=token_files_paths,
@@ -233,10 +235,11 @@ if args.bpe:
     )
 
     # Converts the tokenized musics into tokens with BPE
-    print('Applying BPE...')
+    logger.info('Applying BPE...')
     tokenizer.apply_bpe_to_dataset(args.tokens_path, tokens_bpe_path)
 
-    print('Saving params with BPE applied...')
+    logger.info('Saving params with BPE applied...')
     tokenizer.save_params(f'{tokens_bpe_path}/{TOKEN_PARAMS_NAME}')
 
-    print(f'Vocab size (BPE): {len(tokenizer.vocab)}')
+    logger.info('Vocab size (BPE): {vocab_size}',
+                vocab_size=len(tokenizer.vocab))
