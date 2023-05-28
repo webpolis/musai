@@ -258,6 +258,8 @@ if __name__ == "__main__":
 
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
+        ray.shutdown()
+
         if not args.process:
             TOKENIZER = get_tokenizer(
                 params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
@@ -297,5 +299,3 @@ if __name__ == "__main__":
                 break
             except Exception as e:
                 logger.error(e)
-
-ray.shutdown()
