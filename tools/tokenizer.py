@@ -36,6 +36,7 @@ import json
 import os
 import re
 import argparse
+import ray
 from loguru import logger
 from pathlib import Path
 from miditok import REMIPlus, MMM
@@ -45,6 +46,8 @@ from miditoolkit import MidiFile
 from tqdm import tqdm
 
 # initialize variables
+os.environ['FUNCTION_SIZE_ERROR_THRESHOLD'] = '512'
+
 TOKENS_PATH = '/home/nico/data/ai/models/midi/mix'
 MIDIS_PATH = '/home/nico/data/midis/MIDI'
 TOKEN_PARAMS_NAME = 'token_params.cfg'
@@ -66,66 +69,80 @@ TOKENIZER_ALGOS = ['REMI', 'MMM']
 logger.add('tokenizer_errors_{time}.log', delay=True,
            backtrace=True, diagnose=True, level='ERROR', rotation='10 MB')
 
+# starts orchestration
+ray.init()
+
 # define some functions
 
 
-def get_collection(midis_path=None, midis_glob=None):
+@ray.remote
+def process_midi(midi_path):
+    try:
+        midi = MidiFile(midi_path)
+    except:
+        return None
+
+    programs = get_midi_programs(midi)
+
+    if midi.ticks_per_beat < max(BEAT_RES.values()) * 4:
+        return None
+
+    # remove unwanted tracks
+    for cls in CLASS_EFFECTS:
+        programs_to_delete = list(
+            INSTRUMENT_CLASSES[cls]['program_range'])
+
+    try:
+        for i in range(0, len(midi.instruments)):
+            if midi.instruments[i].program in programs_to_delete:
+                del midi.instruments[i]
+    except Exception as e:
+        return None
+
+    # merge percussion/drums
+    merge_tracks_per_class(midi, CLASSES_PERCUSSION)
+
+    # merge synths
+    merge_tracks_per_class(midi, CLASSES_SYNTHS)
+
+    # merge strings
+    merge_tracks_per_class(midi, CLASSES_STRINGS)
+
+    # merge guitar & bass
+    merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
+
+    # merge_same_program_tracks(midi.instruments)
+    midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
+                       str.lower(os.path.basename(midi_path)))
+
+    ray_midi_ref = ray.put({
+        'midi': midi,
+        'programs': programs,
+        'path': midi_path,
+        'name': midi_name
+    })
+
+    return ray_midi_ref
+
+
+def get_collection_refs(midis_path=None, midis_glob=None):
     """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
 
     :return: A dictionary containing a set of {'midi': ..., 'programs': ..., 'path': ...} 
             for each MIDI file in the collection.
     :rtype: dict
     """
-    midi_collection = {}
     midi_file_paths = list(Path(midis_path).glob(midis_glob))
 
     logger.info(
         'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
 
-    for midi_path in tqdm(midi_file_paths):
-        try:
-            midi_name = re.sub(
-                r'[^0-9a-z_]{1,}', '_', str.lower(os.path.basename(midi_path)))
-            midi = MidiFile(midi_path)
-            programs = get_midi_programs(midi)
+    # process MIDIs via Ray
+    ray_refs = [process_midi.remote(midi_path)
+                for midi_path in tqdm(midi_file_paths)]
+    ray_midi_refs = ray.get(ray_refs)
 
-            if midi.ticks_per_beat < max(BEAT_RES.values()) * 4:
-                continue
-
-            # remove unwanted tracks
-            for cls in CLASS_EFFECTS:
-                programs_to_delete = list(
-                    INSTRUMENT_CLASSES[cls]['program_range'])
-
-            for i in range(0, len(midi.instruments)):
-                if midi.instruments[i].program in programs_to_delete:
-                    del midi.instruments[i]
-
-            # merge percussion/drums
-            merge_tracks_per_class(midi, CLASSES_PERCUSSION)
-
-            # merge synths
-            merge_tracks_per_class(midi, CLASSES_SYNTHS)
-
-            # merge strings
-            merge_tracks_per_class(midi, CLASSES_STRINGS)
-
-            # merge guitar & bass
-            merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
-
-            # merge_same_program_tracks(midi.instruments)
-
-            midi_collection[midi_name] = {
-                'midi': midi,
-                'programs': programs,
-                'path': midi_path
-            }
-        except KeyboardInterrupt:
-            break
-        except Exception as e:
-            logger.warning(e)
-
-    return midi_collection
+    return [ref for ref in ray_midi_refs if ref != None]
 
 
 def get_tokenizer(params=None, algo='MMM'):
@@ -184,30 +201,37 @@ if __name__ == "__main__":
 
     # initializes tokenizer
     TOKENIZER = get_tokenizer()
-    MIDI_COLLECTION = get_collection(args.midis_path, args.midis_glob)
-    MIDI_TITLES = [name for name, _doc in MIDI_COLLECTION.items()]
+    MIDI_COLLECTION_REFS = get_collection_refs(
+        args.midis_path, args.midis_glob)
+    MIDI_TITLES = [ray.get(ray_midi_ref)['name']
+                   for ray_midi_ref in MIDI_COLLECTION_REFS]
 
     if args.process:
-        logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
-            MIDI_COLLECTION.items()))
+        @ray.remote
+        def tokenize_set(midi_doc):
+            midi = midi_doc['midi']
+            programs = midi_doc['programs']
 
-        Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
-
-        for midi_name in tqdm(MIDI_TITLES):
             try:
-                midi_doc = MIDI_COLLECTION[midi_name]
-                midi = midi_doc['midi']
-                programs = midi_doc['programs']
-
                 tokens = TOKENIZER.midi_to_tokens(
                     midi, apply_bpe_if_possible=args.bpe)
 
                 TOKENIZER.save_tokens(
-                    tokens, f'{args.tokens_path}/{midi_name}.json', programs=programs)
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                logger.error(e)
+                    tokens, f"{args.tokens_path}/{midi_doc['name']}.json", programs=programs)
+            except:
+                return None
+
+            return True
+
+        logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
+            MIDI_COLLECTION_REFS))
+
+        Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
+
+        # process tokenization via Ray
+        ray_refs = [tokenize_set.remote(ray_midi_ref)
+                    for ray_midi_ref in MIDI_COLLECTION_REFS]
+        ray_data = ray.get(ray_refs)
 
         logger.info('Vocab size (no BPE): {vocab_size}',
                     vocab_size=len(TOKENIZER.vocab))
@@ -251,7 +275,7 @@ if __name__ == "__main__":
 
     if args.semantical:
         logger.info('Semantical processing: {collection_size} documents', collection_size=len(
-            MIDI_COLLECTION.items()))
+            MIDI_COLLECTION_REFS.items()))
 
         token_files_paths = [
             f'{args.tokens_path}/{midi_name}.json' for midi_name in MIDI_TITLES]
