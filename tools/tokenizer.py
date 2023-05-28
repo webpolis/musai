@@ -75,6 +75,12 @@ ray.init()
 # define some functions
 
 
+def to_iterator(obj_ids):
+    while obj_ids:
+        done, obj_ids = ray.wait(obj_ids)
+        yield ray.get(done[0])
+
+
 @ray.remote
 def process_midi(midi_path):
     try:
@@ -139,8 +145,8 @@ def get_collection_refs(midis_path=None, midis_glob=None):
 
     # process MIDIs via Ray
     ray_refs = [process_midi.remote(midi_path)
-                for midi_path in tqdm(midi_file_paths)]
-    ray_midi_refs = ray.get(ray_refs)
+                for midi_path in midi_file_paths]
+    ray_midi_refs = [ref for ref in tqdm(to_iterator(ray_refs))]
 
     return [ref for ref in ray_midi_refs if ref != None]
 
