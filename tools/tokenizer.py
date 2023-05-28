@@ -211,6 +211,7 @@ if __name__ == "__main__":
         args.midis_path, args.midis_glob)
     MIDI_TITLES = [ray.get(ray_midi_ref)['name']
                    for ray_midi_ref in MIDI_COLLECTION_REFS]
+    ray_tokenized_refs = None
 
     if args.process:
         @ray.remote
@@ -227,7 +228,7 @@ if __name__ == "__main__":
             except:
                 return None
 
-            return True
+            return midi_doc
 
         logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
             MIDI_COLLECTION_REFS))
@@ -237,7 +238,8 @@ if __name__ == "__main__":
         # process tokenization via Ray
         ray_refs = [tokenize_set.remote(ray_midi_ref)
                     for ray_midi_ref in MIDI_COLLECTION_REFS]
-        ray_data = ray.get(ray_refs)
+        ray_tokenized_refs = [
+            ray_tokenized_ref for ray_tokenized_ref in tqdm(to_iterator(ray_refs))]
 
         logger.info('Vocab size (no BPE): {vocab_size}',
                     vocab_size=len(TOKENIZER.vocab))
@@ -252,7 +254,7 @@ if __name__ == "__main__":
         # Constructs the vocabulary with BPE, from the tokenized files
         tokens_bpe_path = f'{args.tokens_path}/bpe'
         token_files_paths = [
-            f'{args.tokens_path}/{midi_name}.json' for midi_name in MIDI_TITLES]
+            f"{args.tokens_path}/{midi_doc['name']}.json" for midi_doc in ray_tokenized_refs if midi_doc != None]
 
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
