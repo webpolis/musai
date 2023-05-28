@@ -86,7 +86,8 @@ logger.add('tokenizer_errors_{time}.log', delay=True,
 
 # define some functions
 
-def get_collection():
+
+def get_collection(midis_path=None, midis_glob=None):
     """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
 
     :return: A dictionary containing a set of {'midi': ..., 'programs': ..., 'path': ...} 
@@ -94,7 +95,7 @@ def get_collection():
     :rtype: dict
     """
     MIDI_COLLECTION = {}
-    MIDI_FILE_PATHS = list(Path(args.midis_path).glob(args.midis_glob))
+    MIDI_FILE_PATHS = list(Path(midis_path).glob(midis_glob))
 
     logger.info(
         'Processing collection: {coll_size} MIDI files', coll_size=len(MIDI_FILE_PATHS))
@@ -183,7 +184,7 @@ def get_tokenizer(params=None, algo='MMM'):
 if args:
     # initializes tokenizer
     TOKENIZER = get_tokenizer()
-    MIDI_COLLECTION = get_collection()
+    MIDI_COLLECTION = get_collection(args.midis_path, args.midis_glob)
     MIDI_TITLES = [name for name, _doc in MIDI_COLLECTION.items()]
 
     if args.process:
