@@ -123,7 +123,7 @@ def get_collection(midis_path=None, midis_glob=None):
         except KeyboardInterrupt:
             break
         except Exception as e:
-            logger.error(e)
+            logger.warning(e)
 
     return midi_collection
 
