@@ -62,24 +62,6 @@ BINS_TEMPO = (24)
 
 TOKENIZER_ALGOS = ['REMI', 'MMM']
 
-# parse command line arguments
-arg_parser = argparse.ArgumentParser()
-arg_parser.add_argument('-t', '--tokens_path', default=TOKENS_PATH,
-                        help='The output path were tokens are saved', type=str)
-arg_parser.add_argument('-m', '--midis_path', default=MIDIS_PATH,
-                        help='The path where MIDI files can be located', type=str)
-arg_parser.add_argument('-g', '--midis_glob', default='*mix*.mid',
-                        help='The glob pattern used to locate MIDI files', type=str)
-arg_parser.add_argument('-b', '--bpe', help='Applies BPE to the corpora of tokens',
-                        action='store_true', default=False)
-arg_parser.add_argument('-p', '--process', help='Extracts tokens from the MIDI files',
-                        action='store_true', default=False)
-arg_parser.add_argument('-s', '--semantical', help='Analyze corpora and process semantical grouping',
-                        action='store_true', default=False)
-arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
-                        choices=TOKENIZER_ALGOS, default='MMM', type=str)
-args = arg_parser.parse_args()
-
 # initialize logger
 logger.add('tokenizer_errors_{time}.log', delay=True,
            backtrace=True, diagnose=True, level='ERROR', rotation='10 MB')
@@ -94,17 +76,17 @@ def get_collection(midis_path=None, midis_glob=None):
             for each MIDI file in the collection.
     :rtype: dict
     """
-    MIDI_COLLECTION = {}
-    MIDI_FILE_PATHS = list(Path(midis_path).glob(midis_glob))
+    midi_collection = {}
+    midi_file_paths = list(Path(midis_path).glob(midis_glob))
 
     logger.info(
-        'Processing collection: {coll_size} MIDI files', coll_size=len(MIDI_FILE_PATHS))
+        'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
 
-    for MIDI_PATH in tqdm(MIDI_FILE_PATHS):
+    for midi_path in tqdm(midi_file_paths):
         try:
-            MIDI_NAME = re.sub(
-                r'[^0-9a-z_]{1,}', '_', str.lower(os.path.basename(MIDI_PATH)))
-            midi = MidiFile(MIDI_PATH)
+            midi_name = re.sub(
+                r'[^0-9a-z_]{1,}', '_', str.lower(os.path.basename(midi_path)))
+            midi = MidiFile(midi_path)
             programs = get_midi_programs(midi)
 
             if midi.ticks_per_beat < max(BEAT_RES.values()) * 4:
@@ -133,17 +115,17 @@ def get_collection(midis_path=None, midis_glob=None):
 
             # merge_same_program_tracks(midi.instruments)
 
-            MIDI_COLLECTION[MIDI_NAME] = {
+            midi_collection[midi_name] = {
                 'midi': midi,
                 'programs': programs,
-                'path': MIDI_PATH
+                'path': midi_path
             }
         except KeyboardInterrupt:
             break
         except Exception as e:
             logger.error(e)
 
-    return MIDI_COLLECTION
+    return midi_collection
 
 
 def get_tokenizer(params=None, algo='MMM'):
@@ -181,7 +163,25 @@ def get_tokenizer(params=None, algo='MMM'):
 
 
 # begin program
-if args:
+if __name__ == "__main__":
+    # parse command line arguments
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('-t', '--tokens_path', default=TOKENS_PATH,
+                            help='The output path were tokens are saved', type=str)
+    arg_parser.add_argument('-m', '--midis_path', default=MIDIS_PATH,
+                            help='The path where MIDI files can be located', type=str)
+    arg_parser.add_argument('-g', '--midis_glob', default='*mix*.mid',
+                            help='The glob pattern used to locate MIDI files', type=str)
+    arg_parser.add_argument('-b', '--bpe', help='Applies BPE to the corpora of tokens',
+                            action='store_true', default=False)
+    arg_parser.add_argument('-p', '--process', help='Extracts tokens from the MIDI files',
+                            action='store_true', default=False)
+    arg_parser.add_argument('-s', '--semantical', help='Analyze corpora and process semantical grouping',
+                            action='store_true', default=False)
+    arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
+                            choices=TOKENIZER_ALGOS, default='MMM', type=str)
+    args = arg_parser.parse_args()
+
     # initializes tokenizer
     TOKENIZER = get_tokenizer()
     MIDI_COLLECTION = get_collection(args.midis_path, args.midis_glob)
