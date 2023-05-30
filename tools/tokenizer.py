@@ -81,22 +81,40 @@ def to_iterator(obj_ids):
         yield ray.get(done[0])
 
 
-@ray.remote
-def process_midi(midi_path):
+# @ray.remote
+def process_midi(midi_path, classes=None, minlength=16, debug=False):
     try:
         midi = MidiFile(midi_path)
     except:
         return None
 
-    programs = get_midi_programs(midi)
+    if (midi.max_tick/midi.ticks_per_beat) < minlength:
+        return None
 
     if midi.ticks_per_beat < max(BEAT_RES.values()) * 4:
         return None
 
+    programs = get_midi_programs(midi)
+
     # remove unwanted tracks
-    for cls in CLASS_EFFECTS:
-        programs_to_delete = list(
-            INSTRUMENT_CLASSES[cls]['program_range'])
+    programs_to_delete = []
+
+    if classes is None:
+        for ic in CLASS_EFFECTS:
+            programs_to_delete += list(
+                INSTRUMENT_CLASSES[ic]['program_range'])
+    else:
+        classes = classes.strip().split(',')
+        classes = [int(c.strip()) for c in classes]
+
+        for i in range(0, len(INSTRUMENT_CLASSES)):
+            if i not in classes:
+                programs_to_delete += list(
+                    INSTRUMENT_CLASSES[i]['program_range'])
+
+    # discard empty songs
+    if len(midi.instruments) < 1:
+        return None
 
     try:
         for i in range(0, len(midi.instruments)):
