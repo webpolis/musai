@@ -110,15 +110,14 @@ def process_midi(midi_path, classes=None, minlength=16, debug=False):
                 programs_to_delete += list(
                     INSTRUMENT_CLASSES[i]['program_range'])
 
+    all_programs = range(-1, 128)
+    keep_programs = list(set(all_programs) - set(programs_to_delete))
+
+    # remove unwanted tracks
+    merge_tracks_per_class(midi, valid_programs=keep_programs)
+
     # discard empty songs
     if len(midi.instruments) < 1:
-        return None
-
-    try:
-        for i in range(0, len(midi.instruments)):
-            if midi.instruments[i].program in programs_to_delete:
-                del midi.instruments[i]
-    except Exception as e:
         return None
 
     # merge percussion/drums
