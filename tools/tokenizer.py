@@ -73,13 +73,16 @@ logger.add('tokenizer_errors_{time}.log', delay=True,
 # define some functions
 
 
-def to_iterator(obj_ids):
+def to_iterator(obj_ids, debug=False):
+    if debug:
+        return obj_ids
+
     while obj_ids:
         done, obj_ids = ray.wait(obj_ids)
         yield ray.get(done[0])
 
 
-# @ray.remote
+@ray.remote
 def process_midi(midi_path, classes=None, minlength=16, debug=False):
     try:
         midi = MidiFile(midi_path)
@@ -171,7 +174,7 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlengt
     if debug:
         return [ref for ref in ray_refs if ref != None]
 
-    ray_midi_refs = [ref for ref in tqdm(to_iterator(ray_refs))]
+    ray_midi_refs = [ref for ref in tqdm(to_iterator(ray_refs, debug))]
 
     return [ref for ref in ray_midi_refs if ref != None]
 
@@ -255,7 +258,7 @@ if __name__ == "__main__":
                        for midi_ref in MIDI_COLLECTION_REFS]
 
     if args.process:
-        # @ray.remote
+        @ray.remote
         def tokenize_set(midi_doc):
             midi = midi_doc['midi']
             programs = midi_doc['programs']
@@ -281,7 +284,7 @@ if __name__ == "__main__":
         ray_refs = [tokenize_call(ray_midi_ref)
                     for ray_midi_ref in MIDI_COLLECTION_REFS]
         ray_tokenized_refs = [
-            ray_tokenized_ref for ray_tokenized_ref in tqdm(to_iterator(ray_refs))]
+            ray_tokenized_ref for ray_tokenized_ref in tqdm(to_iterator(ray_refs, args.debug))]
 
         logger.info('Vocab size (no BPE): {vocab_size}',
                     vocab_size=len(TOKENIZER.vocab))
