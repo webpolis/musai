@@ -37,6 +37,7 @@ import os
 import re
 import argparse
 import ray
+from collections import namedtuple
 from loguru import logger
 from pathlib import Path
 from miditok import REMIPlus, MMM
@@ -68,9 +69,6 @@ TOKENIZER_ALGOS = ['REMI', 'MMM']
 # initialize logger
 logger.add('tokenizer_errors_{time}.log', delay=True,
            backtrace=True, diagnose=True, level='ERROR', rotation='10 MB')
-
-# starts orchestration
-ray.init()
 
 # define some functions
 
@@ -139,17 +137,22 @@ def process_midi(midi_path, classes=None, minlength=16, debug=False):
     midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
                        str.lower(os.path.basename(midi_path)))
 
-    ray_midi_ref = ray.put({
+    midi_doc = {
         'midi': midi,
         'programs': programs,
         'path': midi_path,
         'name': midi_name
-    })
+    }
+
+    if debug:
+        return midi_doc
+
+    ray_midi_ref = ray.put(midi_doc)
 
     return ray_midi_ref
 
 
-def get_collection_refs(midis_path=None, midis_glob=None):
+def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlength=16, debug=False):
     """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
 
     :return: A dictionary containing a set of {'midi': ..., 'programs': ..., 'path': ...} 
@@ -162,8 +165,13 @@ def get_collection_refs(midis_path=None, midis_glob=None):
         'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
 
     # process MIDIs via Ray
-    ray_refs = [process_midi.remote(midi_path)
+    process_call = process_midi.remote if not debug else process_midi
+    ray_refs = [process_call(midi_path, classes, minlength, debug)
                 for midi_path in midi_file_paths]
+
+    if debug:
+        return [ref for ref in ray_refs if ref != None]
+
     ray_midi_refs = [ref for ref in tqdm(to_iterator(ray_refs))]
 
     return [ref for ref in ray_midi_refs if ref != None]
@@ -221,18 +229,34 @@ if __name__ == "__main__":
                             action='store_true', default=False)
     arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
                             choices=TOKENIZER_ALGOS, default='MMM', type=str)
+    arg_parser.add_argument('-c', '--classes', help='Only extract this instruments classes (e.g. 1,14,16)',
+                            default=None, type=str)
+    arg_parser.add_argument('-l', '--length', help='Minimum sequence length (in beats)',
+                            default=16, type=int)
+    arg_parser.add_argument(
+        '-d', '--debug', help='Debug mode.', action='store_true', default=False)
     args = arg_parser.parse_args()
 
     # initializes tokenizer
     TOKENIZER = get_tokenizer()
-    MIDI_COLLECTION_REFS = get_collection_refs(
-        args.midis_path, args.midis_glob)
-    MIDI_TITLES = [ray.get(ray_midi_ref)['name']
-                   for ray_midi_ref in MIDI_COLLECTION_REFS]
-    ray_tokenized_refs = None
+
+    if not args.debug:
+        # starts orchestration
+        ray.init()
+
+        MIDI_COLLECTION_REFS = get_collection_refs(
+            args.midis_path, args.midis_glob, args.classes, args.length)
+        MIDI_TITLES = [ray.get(ray_midi_ref)['name']
+                       for ray_midi_ref in MIDI_COLLECTION_REFS]
+        ray_tokenized_refs = None
+    else:
+        MIDI_COLLECTION_REFS = get_collection_refs(
+            args.midis_path, args.midis_glob, args.classes, args.length, args.debug)
+        MIDI_TITLES = [midi_ref['name']
+                       for midi_ref in MIDI_COLLECTION_REFS]
 
     if args.process:
-        @ray.remote
+        # @ray.remote
         def tokenize_set(midi_doc):
             midi = midi_doc['midi']
             programs = midi_doc['programs']
@@ -243,7 +267,7 @@ if __name__ == "__main__":
 
                 TOKENIZER.save_tokens(
                     tokens, f"{args.tokens_path}/{midi_doc['name']}.json", programs=programs)
-            except:
+            except Exception as error:
                 return None
 
             return midi_doc
@@ -254,7 +278,8 @@ if __name__ == "__main__":
         Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
 
         # process tokenization via Ray
-        ray_refs = [tokenize_set.remote(ray_midi_ref)
+        tokenize_call = tokenize_set if args.debug else tokenize_set.remote
+        ray_refs = [tokenize_call(ray_midi_ref)
                     for ray_midi_ref in MIDI_COLLECTION_REFS]
         ray_tokenized_refs = [
             ray_tokenized_ref for ray_tokenized_ref in tqdm(to_iterator(ray_refs))]
