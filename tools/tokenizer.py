@@ -70,6 +70,32 @@ TOKENIZER_ALGOS = ['REMI', 'MMM']
 logger.add('tokenizer_errors_{time}.log', delay=True,
            backtrace=True, diagnose=True, level='ERROR', rotation='10 MB')
 
+# begin program
+if __name__ == "__main__":
+    # parse command line arguments
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('-t', '--tokens_path', default=TOKENS_PATH,
+                            help='The output path were tokens are saved', type=str)
+    arg_parser.add_argument('-m', '--midis_path', default=MIDIS_PATH,
+                            help='The path where MIDI files can be located', type=str)
+    arg_parser.add_argument('-g', '--midis_glob', default='*mix*.mid',
+                            help='The glob pattern used to locate MIDI files', type=str)
+    arg_parser.add_argument('-b', '--bpe', help='Applies BPE to the corpora of tokens',
+                            action='store_true', default=False)
+    arg_parser.add_argument('-p', '--process', help='Extracts tokens from the MIDI files',
+                            action='store_true', default=False)
+    arg_parser.add_argument('-s', '--semantical', help='Analyze corpora and process semantical grouping',
+                            action='store_true', default=False)
+    arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
+                            choices=TOKENIZER_ALGOS, default='MMM', type=str)
+    arg_parser.add_argument('-c', '--classes', help='Only extract this instruments classes (e.g. 1,14,16)',
+                            default=None, type=str)
+    arg_parser.add_argument('-l', '--length', help='Minimum sequence length (in beats)',
+                            default=16, type=int)
+    arg_parser.add_argument(
+        '-d', '--debug', help='Debug mode.', action='store_true', default=False)
+    args = arg_parser.parse_args()
+
 # define some functions
 
 
@@ -215,30 +241,6 @@ def get_tokenizer(params=None, algo='MMM'):
 
 # begin program
 if __name__ == "__main__":
-    # parse command line arguments
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('-t', '--tokens_path', default=TOKENS_PATH,
-                            help='The output path were tokens are saved', type=str)
-    arg_parser.add_argument('-m', '--midis_path', default=MIDIS_PATH,
-                            help='The path where MIDI files can be located', type=str)
-    arg_parser.add_argument('-g', '--midis_glob', default='*mix*.mid',
-                            help='The glob pattern used to locate MIDI files', type=str)
-    arg_parser.add_argument('-b', '--bpe', help='Applies BPE to the corpora of tokens',
-                            action='store_true', default=False)
-    arg_parser.add_argument('-p', '--process', help='Extracts tokens from the MIDI files',
-                            action='store_true', default=False)
-    arg_parser.add_argument('-s', '--semantical', help='Analyze corpora and process semantical grouping',
-                            action='store_true', default=False)
-    arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
-                            choices=TOKENIZER_ALGOS, default='MMM', type=str)
-    arg_parser.add_argument('-c', '--classes', help='Only extract this instruments classes (e.g. 1,14,16)',
-                            default=None, type=str)
-    arg_parser.add_argument('-l', '--length', help='Minimum sequence length (in beats)',
-                            default=16, type=int)
-    arg_parser.add_argument(
-        '-d', '--debug', help='Debug mode.', action='store_true', default=False)
-    args = arg_parser.parse_args()
-
     # initializes tokenizer
     TOKENIZER = get_tokenizer()
 
@@ -344,3 +346,5 @@ if __name__ == "__main__":
                 break
             except Exception as e:
                 logger.error(e)
+
+    ray.shutdown()
