@@ -45,6 +45,8 @@ from miditok.constants import ADDITIONAL_TOKENS, BEAT_RES, INSTRUMENT_CLASSES
 from miditok.utils import merge_tracks_per_class, merge_same_program_tracks, get_midi_programs
 from miditoolkit import MidiFile
 from tqdm import tqdm
+from functools import reduce
+from operator import iconcat
 
 # initialize variables
 os.environ['FUNCTION_SIZE_ERROR_THRESHOLD'] = '512'
@@ -108,6 +110,23 @@ def to_iterator(obj_ids, debug=False):
         yield ray.get(done[0])
 
 
+def filter_programs(skip_programs):
+    all_programs = range(-1, 128)
+    keep_programs = list(set(all_programs) - set(skip_programs))
+
+    return keep_programs
+
+
+def get_programs_from_classes(classes):
+    programs = []
+
+    for i in range(0, len(INSTRUMENT_CLASSES)):
+        if i not in classes:
+            programs += list(
+                INSTRUMENT_CLASSES[i]['program_range'])
+
+    return programs
+
 @ray.remote
 def process_midi(midi_path, classes=None, minlength=16, debug=False):
     try:
@@ -133,14 +152,9 @@ def process_midi(midi_path, classes=None, minlength=16, debug=False):
     else:
         classes = classes.strip().split(',')
         classes = [int(c.strip()) for c in classes]
+        programs_to_delete = get_programs_from_classes(classes)
 
-        for i in range(0, len(INSTRUMENT_CLASSES)):
-            if i not in classes:
-                programs_to_delete += list(
-                    INSTRUMENT_CLASSES[i]['program_range'])
-
-    all_programs = range(-1, 128)
-    keep_programs = list(set(all_programs) - set(programs_to_delete))
+    keep_programs = filter_programs(programs_to_delete)
 
     # remove unwanted tracks
     merge_tracks_per_class(midi, valid_programs=keep_programs)
@@ -149,21 +163,24 @@ def process_midi(midi_path, classes=None, minlength=16, debug=False):
     if len(midi.instruments) < 1:
         return None
 
-    # merge percussion/drums
-    merge_tracks_per_class(midi, CLASSES_PERCUSSION)
+    if classes is None:
+        # merge percussion/drums
+        merge_tracks_per_class(midi, CLASSES_PERCUSSION)
 
-    # merge synths
-    merge_tracks_per_class(midi, CLASSES_SYNTHS)
+        # merge synths
+        merge_tracks_per_class(midi, CLASSES_SYNTHS)
 
-    # merge strings
-    merge_tracks_per_class(midi, CLASSES_STRINGS)
+        # merge strings
+        merge_tracks_per_class(midi, CLASSES_STRINGS)
 
-    # merge guitar & bass
-    merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
+        # merge guitar & bass
+        merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
 
     # merge_same_program_tracks(midi.instruments)
     midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
                        str.lower(os.path.basename(midi_path)))
+
+    programs = get_midi_programs(midi)
 
     midi_doc = {
         'midi': midi,
@@ -205,7 +222,7 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlengt
     return [ref for ref in ray_midi_refs if ref != None]
 
 
-def get_tokenizer(params=None, algo='MMM'):
+def get_tokenizer(params=None, algo='MMM', programs=None):
     """Returns a tokenizer.
 
     :param params: Path to a token_params.cfg file for preloading, defaults to None
@@ -221,6 +238,10 @@ def get_tokenizer(params=None, algo='MMM'):
     additional_tokens['TimeSignature'] = True
     additional_tokens['Program'] = True
     additional_tokens['nb_tempos'] = BINS_TEMPO
+
+    if programs != None:
+        additional_tokens['programs'] = programs
+
     tokenizer = None
 
     if algo == 'REMI':
@@ -241,9 +262,6 @@ def get_tokenizer(params=None, algo='MMM'):
 
 # begin program
 if __name__ == "__main__":
-    # initializes tokenizer
-    TOKENIZER = get_tokenizer()
-
     if not args.debug:
         # starts orchestration
         ray.init()
@@ -280,6 +298,13 @@ if __name__ == "__main__":
             MIDI_COLLECTION_REFS))
 
         Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
+
+        # collect used programs
+        programs_used = [program[0] for program in list(set(reduce(
+            iconcat, [ray_midi_ref['programs'] for ray_midi_ref in MIDI_COLLECTION_REFS], [])))]
+
+        # initializes tokenizer
+        TOKENIZER = get_tokenizer(programs=programs_used)
 
         # process tokenization via Ray
         tokenize_call = tokenize_set if args.debug else tokenize_set.remote
