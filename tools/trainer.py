@@ -252,95 +252,101 @@ if __name__ == "__main__":
     if args.tokens_path == None:
         raise 'Invalid tokens path'
 
-    # initialize tokenizer
-    TOKENIZER = get_tokenizer(params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
+    try:
+        # initialize tokenizer
+        TOKENIZER = get_tokenizer(
+            params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
 
-    # generate output dir
-    Path(args.output_path).mkdir(parents=True, exist_ok=True)
-    logger.info('Output dir setup.')
+        # generate output dir
+        Path(args.output_path).mkdir(parents=True, exist_ok=True)
+        logger.info('Output dir setup.')
 
-    # construct dataset
-    logger.info('Initializing dataset...')
+        # construct dataset
+        logger.info('Initializing dataset...')
 
-    midi_jsons = list(Path(args.tokens_path).glob('*.json'))
-    random.shuffle(midi_jsons)
+        midi_jsons = list(Path(args.tokens_path).glob('*.json'))
+        random.shuffle(midi_jsons)
 
-    DATASET = MIDIDataset(
-        files_paths=midi_jsons,
-        min_seq_len=16,
-        max_seq_len=args.ctx_len,
-        no_labels=False
-    )
-    subset_train, subset_valid = create_subsets(DATASET, [0.3])
+        DATASET = MIDIDataset(
+            files_paths=midi_jsons,
+            min_seq_len=16,
+            max_seq_len=args.ctx_len,
+            no_labels=False
+        )
+        subset_train, subset_valid = create_subsets(DATASET, [0.3])
 
-    # build trainer/model params
-    logger.info('Setting up trainer...')
+        # build trainer/model params
+        logger.info('Setting up trainer...')
 
-    params = {
-        'adam_eps': 1e-8,
-        'betas': (.9, .99),
-        'ctx_len': args.ctx_len,
-        'dim_att': args.embed_num,
-        'dim_ffn': args.embed_num*4,
-        'eight_bits': False,  # experimental
-        'epoch_begin': 0,
-        'epoch_count': args.epochs_num,
-        'epoch_save': 1,
-        'epoch_steps': args.steps_num,
-        'grad_cp': 0,  # model.py:530
-        'gradient_clip_val': 1.0,
-        'head_qk': int(args.embed_num*2),
-        'layerwise_lr': 1,
-        'lr_decay': LR_DECAY,
-        'lr_init': LR_RATE,
-        'lr_final': LR_RATE/80,
-        'micro_bsz': args.batches_num,
-        'my_pile_stage': 0,
-        'my_pos_emb': 0,
-        'my_qa_mask': 0,
-        'my_timestamp': datetime.datetime.today().strftime("%Y-%m-%d-%H-%M-%S"),
-        'n_embd': args.embed_num,
-        'n_layer': args.layers_num,
-        'padding_idx': 0,
-        'pre_ffn': 0,
-        'proj_dir': args.output_path,
-        'real_bsz':  args.batches_num,
-        'strategy': 'ddp_find_unused_parameters_false',
-        'tiny_att_dim': -1,  # int(N_EMBED/4),# model.py:406
-        'tiny_att_layer': -1,  # model.py:406
-        'vocab_size': len(TOKENIZER.vocab),
-        'wandb': '',
-        'warmup_steps': 10,
-    }
+        params = {
+            'adam_eps': 1e-8,
+            'betas': (.9, .99),
+            'ctx_len': args.ctx_len,
+            'dim_att': args.embed_num,
+            'dim_ffn': args.embed_num*4,
+            'eight_bits': False,  # experimental
+            'epoch_begin': 0,
+            'epoch_count': args.epochs_num,
+            'epoch_save': 1,
+            'epoch_steps': args.steps_num,
+            'grad_cp': 0,  # model.py:530
+            'gradient_clip_val': 1.0,
+            'head_qk': int(args.embed_num*2),
+            'layerwise_lr': 1,
+            'lr_decay': LR_DECAY,
+            'lr_init': LR_RATE,
+            'lr_final': LR_RATE/80,
+            'micro_bsz': args.batches_num,
+            'my_pile_stage': 0,
+            'my_pos_emb': 0,
+            'my_qa_mask': 0,
+            'my_timestamp': datetime.datetime.today().strftime("%Y-%m-%d-%H-%M-%S"),
+            'n_embd': args.embed_num,
+            'n_layer': args.layers_num,
+            'padding_idx': 0,
+            'pre_ffn': 0,
+            'proj_dir': args.output_path,
+            'real_bsz':  args.batches_num,
+            'strategy': 'ddp_find_unused_parameters_false',
+            'tiny_att_dim': -1,  # int(N_EMBED/4),# model.py:406
+            'tiny_att_layer': -1,  # model.py:406
+            'vocab_size': len(TOKENIZER.vocab),
+            'wandb': '',
+            'warmup_steps': 10,
+        }
 
-    params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+        params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
 
-    # initialize model
-    sys.path.append('../model')
+        # initialize model
+        sys.path.append('../model')
 
-    from model.model import RWKV
-    model_base = RWKV(params_obj)
-    model_base.to(DEVICE)
+        from model.model import RWKV
+        model_base = RWKV(params_obj)
+        model_base.to(DEVICE)
 
-    logger.info('Model initialized')
+        logger.info('Model initialized')
 
-    # prepare for training
-    logger.info('Loading data...')
-    data_loader = DataLoader(DATASET, shuffle=False, pin_memory=True,
-                             batch_size=params_obj.micro_bsz, num_workers=cpu_count(), persistent_workers=False, drop_last=True)
-    trainer_params = {
-        'gradient_clip_val': 1.0,
-        'log_every_n_steps': 100,
-        'devices': 'auto',
-        'max_steps': args.steps_num*args.epochs_num,
-        'accelerator': 'gpu',
-        'strategy': 'auto',
-        'enable_checkpointing': True,
-        'precision': '16',
-        'callbacks': [train_callback(params_obj)],
-    }
-    trainer_pl = pl.Trainer(**trainer_params)
+        # prepare for training
+        logger.info('Loading data...')
+        data_loader = DataLoader(DATASET, shuffle=False, pin_memory=True,
+                                 batch_size=params_obj.micro_bsz, num_workers=cpu_count(), persistent_workers=False, drop_last=True)
+        trainer_params = {
+            'gradient_clip_val': 1.0,
+            'log_every_n_steps': 100,
+            'devices': 'auto',
+            'max_steps': args.steps_num*args.epochs_num,
+            'accelerator': 'gpu',
+            'strategy': 'auto',
+            'enable_checkpointing': True,
+            'precision': '16',
+            'callbacks': [train_callback(params_obj)],
+        }
+        trainer_pl = pl.Trainer(**trainer_params)
 
-    # begin training
-    logger.info('Begin training...')
-    trainer_pl.fit(model_base, data_loader)
+        # begin training
+        logger.info('Begin training...')
+        trainer_pl.fit(model_base, data_loader)
+    except KeyboardInterrupt:
+        sys.exit(1)
+    except Exception as e:
+        logger.error(e)
