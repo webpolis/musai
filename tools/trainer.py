@@ -59,10 +59,6 @@ Some resets
 gc.collect()
 torch.cuda.empty_cache()
 
-# seed
-seed = random.randint(1000, 10000)
-pl.seed_everything(seed)
-
 """
 Some definitions
 """
@@ -253,6 +249,10 @@ if __name__ == "__main__":
         raise 'Invalid tokens path'
 
     try:
+        # seed
+        seed = random.randint(1000, 10000)
+        pl.seed_everything(seed)
+
         # initialize tokenizer
         TOKENIZER = get_tokenizer(
             params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
