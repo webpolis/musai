@@ -37,7 +37,6 @@ import os
 import re
 import argparse
 import ray
-from collections import namedtuple
 from loguru import logger
 from pathlib import Path
 from miditok import REMIPlus, MMM

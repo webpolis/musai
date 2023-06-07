@@ -44,9 +44,12 @@ import numpy as np
 import lightning.pytorch as pl
 import sys
 from loguru import logger
+from pathlib import Path
+from collections import namedtuple
 from torchtoolkit.data import create_subsets
 from lightning.pytorch.callbacks import Callback
 from torch.utils.data import DataLoader
+from sympy import randprime
 from dataset import MIDIDataset
 from tokenizer import get_tokenizer, TOKEN_PARAMS_NAME
 
@@ -331,7 +334,7 @@ if __name__ == "__main__":
         'strategy': 'ddp_find_unused_parameters_false',
         'tiny_att_dim': -1,  # int(N_EMBED/4),# model.py:406
         'tiny_att_layer': -1,  # model.py:406
-        'vocab_size': len(tokenizer.vocab),
+        'vocab_size': len(TOKENIZER.vocab),
         'wandb': '',
         'warmup_steps': 10,
     }
@@ -340,6 +343,7 @@ if __name__ == "__main__":
 
     # initialize model
     sys.path.append('../model')
-    import RWKV
 
-    model_base =
+    from model.model import RWKV
+    model_base = RWKV(params_obj)
+    model_base.to(DEVICE)    
