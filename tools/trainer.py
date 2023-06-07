@@ -9,7 +9,7 @@ a combination of machine learning algorithms.
 
 Below is a monolitic script that performs the training over an already 
 generated dataset of tokens (via the tokenizer script) and saves the 
-models in a defined output directory.
+model in a defined output directory.
 
 MIT License
 Copyright (c) [2023] [Nicolás Iglesias]
@@ -40,16 +40,15 @@ import random
 import gc
 import os
 import torch
-import numpy as np
 import lightning.pytorch as pl
 import sys
+from multiprocessing import cpu_count
 from loguru import logger
 from pathlib import Path
 from collections import namedtuple
 from torchtoolkit.data import create_subsets
 from lightning.pytorch.callbacks import Callback
 from torch.utils.data import DataLoader
-from sympy import randprime
 from dataset import MIDIDataset
 from tokenizer import get_tokenizer, TOKEN_PARAMS_NAME
 
@@ -75,7 +74,6 @@ CTX_LEN = 2048
 BATCHES = 6
 N_EMBED = 512
 N_LAYER = 12
-MAGIC_PRIME = randprime(1000000, 10000000000)
 EPOCHS = 6
 EPOCH_STEPS = 1000
 LR_RATE = 8e-4
@@ -101,14 +99,15 @@ class train_callback(Callback):
 
         # LR schedule
         w_step = args.warmup_steps
+
         if args.lr_final == args.lr_init or args.epoch_count == 0:
             lr = args.lr_init
             if trainer.global_step < w_step:
                 lr = lr * (0.2 + 0.8 * trainer.global_step / w_step)
         else:
-            decay_step = real_step - args.my_pile_edecay * args.epoch_steps
+            decay_step = real_step - args.lr_decay * args.epoch_steps
             decay_total = (args.epoch_count -
-                           args.my_pile_edecay) * args.epoch_steps
+                           args.lr_decay) * args.epoch_steps
             progress = (decay_step - w_step + 1) / (decay_total - w_step)
             progress = min(1, max(0, progress))
 
@@ -121,18 +120,14 @@ class train_callback(Callback):
 
             if trainer.global_step < w_step:
                 lr = lr * (0.2 + 0.8 * trainer.global_step / w_step)
-            # if trainer.is_global_zero:
-            #     print(trainer.global_step, decay_step, decay_total, w_step, progress, lr)
 
         for param_group in trainer.optimizers[0].param_groups:
             if args.layerwise_lr > 0:
                 param_group["lr"] = lr * param_group["my_lr_scale"]
-                # print(param_group["lr"], param_group["my_lr_scale"])
             else:
                 param_group["lr"] = lr
 
         trainer.my_lr = lr
-        # rank_zero_info(f"{real_step} {lr}")
 
         if trainer.global_step == 0:
             if trainer.is_global_zero:  # logging
@@ -141,15 +136,19 @@ class train_callback(Callback):
                 trainer.my_log = open(args.proj_dir + "/train_log.txt", "a")
                 trainer.my_log.write(
                     f"NEW RUN {args.my_timestamp}\n{self.args._asdict()}\n")
+
                 try:
                     print(f"\n{trainer.strategy.config}\n")
                     trainer.my_log.write(f"{trainer.strategy.config}\n")
                 except:
                     pass
+
                 trainer.my_log.flush()
+
                 if len(args.wandb) > 0:
-                    print("Login to wandb...")
+                    logger.info("Login to wandb...")
                     import wandb
+
                     wandb.init(
                         project=args.wandb,
                         name=args.run_name + " " + args.my_timestamp,
@@ -169,6 +168,7 @@ class train_callback(Callback):
             token_per_step = args.ctx_len * args.real_bsz
             real_step = trainer.global_step + args.epoch_begin * args.epoch_steps
             kt_s = 0
+
             try:
                 t_cost = (t_now - trainer.my_time_ns) / 1e9
                 kt_s = token_per_step / t_cost / 1000
@@ -177,15 +177,16 @@ class train_callback(Callback):
                 self.log("Kt/s", kt_s, prog_bar=True, on_step=True)
             except:
                 pass
+
             trainer.my_time_ns = t_now
             trainer.my_loss = trainer.my_loss_all.float().mean().item()
             trainer.my_loss_sum += trainer.my_loss
             trainer.my_loss_count += 1
             trainer.my_epoch_loss = trainer.my_loss_sum / trainer.my_loss_count
+
             self.log("lr", trainer.my_lr, prog_bar=True, on_step=True)
             self.log("loss", trainer.my_epoch_loss,
                      prog_bar=True, on_step=True)
-            # self.log("s", real_step, prog_bar=True, on_step=True)
 
             if len(args.wandb) > 0:
                 lll = {"loss": trainer.my_loss, "lr": trainer.my_lr,
@@ -193,14 +194,6 @@ class train_callback(Callback):
                 if kt_s > 0:
                     lll["kt/s"] = kt_s
                 trainer.my_wandb.log(lll, step=int(real_step))
-            if args.magic_prime > 0:
-                expand_factor = 2 if args.my_qa_mask > 0 else 1
-                if int(real_step) == int(args.magic_prime * expand_factor // args.real_bsz) - 1 + int(args.my_random_steps):
-                    to_save_dict = pl_module.state_dict()
-                    save_pth(
-                        to_save_dict,
-                        f"{args.proj_dir}/rwkv-final.pth",
-                    )
 
     def on_train_epoch_start(self, trainer, pl_module):
         args = self.args
@@ -208,20 +201,14 @@ class train_callback(Callback):
         dataset.global_rank = trainer.global_rank
         dataset.real_epoch = int(args.epoch_begin + trainer.current_epoch)
         dataset.world_size = trainer.world_size
-        # print(f'########## world_size {dataset.world_size} global_rank {dataset.global_rank} real_epoch {dataset.real_epoch} ##########')
 
     def on_train_epoch_end(self, trainer, pl_module):
         args = self.args
+
         if trainer.is_global_zero:  # logging & save state_dict
             if (args.epoch_save > 0 and trainer.current_epoch % args.epoch_save == 0) or (trainer.current_epoch == args.epoch_count - 1):
-                if args.data_type == 'wds_img':
-                    raw_dict = pl_module.state_dict()
-                    to_save_dict = {}
-                    for k in raw_dict:
-                        if k.startswith('encoder.') or k.startswith('decoder.'):
-                            to_save_dict[k] = raw_dict[k]
-                else:
-                    to_save_dict = pl_module.state_dict()
+                to_save_dict = pl_module.state_dict()
+
                 try:
                     save_pth(
                         to_save_dict,
@@ -229,14 +216,13 @@ class train_callback(Callback):
                     )
                 except Exception as e:
                     print('Error\n\n', e, '\n\n')
+
             trainer.my_log.write(
                 f"{args.epoch_begin + trainer.current_epoch} {trainer.my_epoch_loss:.6f} {math.exp(trainer.my_epoch_loss):.4f} {trainer.my_lr:.8f} {datetime.datetime.now()} {trainer.current_epoch}\n")
             trainer.my_log.flush()
 
             trainer.my_loss_sum = 0
             trainer.my_loss_count = 0
-            if (args.epoch_begin + trainer.current_epoch) >= args.my_exit:
-                exit(0)
 
 
 """
@@ -245,8 +231,8 @@ CLI
 if __name__ == "__main__":
     # parse command line arguments
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument(
-        '-t', '--tokens_path', help='The path were tokens parameters were saved by the tokenizer', type=str)
+    arg_parser.add_argument('-t', '--tokens_path', default=None,
+                            help='The path were tokens parameters were saved by the tokenizer', type=str)
     arg_parser.add_argument('-o', '--output_path', default='out',
                             help='The output path were model binaries will be saved', type=str)
     arg_parser.add_argument(
@@ -263,6 +249,9 @@ if __name__ == "__main__":
         '-s', '--steps_num', default=EPOCH_STEPS, help='Number of steps per epoch', type=int)
     args = arg_parser.parse_args()
 
+    if args.tokens_path == None:
+        raise 'Invalid tokens path'
+
     # initialize tokenizer
     TOKENIZER = get_tokenizer(params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
 
@@ -273,38 +262,27 @@ if __name__ == "__main__":
     # construct dataset
     logger.info('Initializing dataset...')
 
-    subset_npy = f'{args.output_path}/subset_train.npy'
     midi_jsons = list(Path(args.tokens_path).glob('*.json'))
     random.shuffle(midi_jsons)
 
-    midi_dataset = MIDIDataset(
+    DATASET = MIDIDataset(
         files_paths=midi_jsons,
         min_seq_len=16,
         max_seq_len=args.ctx_len,
         no_labels=False
     )
-    subset_train, subset_valid = create_subsets(midi_dataset, [0.3])
-    ids = []
-    for st in subset_train + subset_valid:
-        ids += list(st['input_ids'].numpy())
-
-    np.save(subset_npy, ids, allow_pickle=False)
+    subset_train, subset_valid = create_subsets(DATASET, [0.3])
 
     # build trainer/model params
     logger.info('Setting up trainer...')
 
     params = {
-        'accelerator': 'gpu',
         'adam_eps': 1e-8,
         'betas': (.9, .99),
         'ctx_len': args.ctx_len,
-        'data_file': subset_npy,
-        'data_type': 'numpy',
-        'devices': 1,
         'dim_att': args.embed_num,
         'dim_ffn': args.embed_num*4,
-        'ds_bucket_mb': 200,
-        'eight_bits': False,
+        'eight_bits': False,  # experimental
         'epoch_begin': 0,
         'epoch_count': args.epochs_num,
         'epoch_save': 1,
@@ -313,17 +291,13 @@ if __name__ == "__main__":
         'gradient_clip_val': 1.0,
         'head_qk': int(args.embed_num*2),
         'layerwise_lr': 1,
-        'log_every_n_steps': 10,
-        'lr_final': LR_RATE/80,
+        'lr_decay': LR_DECAY,
         'lr_init': LR_RATE,
-        'magic_prime': MAGIC_PRIME,
+        'lr_final': LR_RATE/80,
         'micro_bsz': args.batches_num,
-        'my_exit': 99999999,
-        'my_pile_edecay': LR_DECAY,
         'my_pile_stage': 0,
         'my_pos_emb': 0,
         'my_qa_mask': 0,
-        'my_random_steps': 0,
         'my_timestamp': datetime.datetime.today().strftime("%Y-%m-%d-%H-%M-%S"),
         'n_embd': args.embed_num,
         'n_layer': args.layers_num,
@@ -346,4 +320,27 @@ if __name__ == "__main__":
 
     from model.model import RWKV
     model_base = RWKV(params_obj)
-    model_base.to(DEVICE)    
+    model_base.to(DEVICE)
+
+    logger.info('Model initialized')
+
+    # prepare for training
+    logger.info('Loading data...')
+    data_loader = DataLoader(DATASET, shuffle=False, pin_memory=True,
+                             batch_size=params_obj.micro_bsz, num_workers=cpu_count(), persistent_workers=False, drop_last=True)
+    trainer_params = {
+        'gradient_clip_val': 1.0,
+        'log_every_n_steps': 100,
+        'devices': 'auto',
+        'max_steps': args.steps_num*args.epochs_num,
+        'accelerator': 'gpu',
+        'strategy': 'auto',
+        'enable_checkpointing': True,
+        'precision': '16',
+        'callbacks': [train_callback(params_obj)],
+    }
+    trainer_pl = pl.Trainer(**trainer_params)
+
+    # begin training
+    logger.info('Begin training...')
+    trainer_pl.fit(model_base, data_loader)
