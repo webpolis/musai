@@ -323,7 +323,7 @@ if __name__ == "__main__":
         params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
 
         # initialize model
-        from model.model import RWKV
+        from model import RWKV
 
         model_base = RWKV(params_obj)
         model_base.to(DEVICE)
