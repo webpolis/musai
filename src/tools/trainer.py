@@ -315,7 +315,7 @@ if __name__ == "__main__":
             'strategy': 'ddp_find_unused_parameters_false',
             'tiny_att_dim': -1,  # int(N_EMBED/4),# model.py:406
             'tiny_att_layer': -1,  # model.py:406
-            'vocab_size': len(TOKENIZER.vocab),
+            'vocab_size': len(TOKENIZER),
             'wandb': '',
             'warmup_steps': 10,
         }

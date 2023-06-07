@@ -23,7 +23,7 @@ class MIDIDataset(Dataset):
 
         self.data = samples
         self.ctx_len = max_seq_len
-        self.vocab_size = len(tokenizer.vocab)
+        self.vocab_size = len(tokenizer)
         self.data_size = len(self.data)
 
     def __getitem__(self, idx) -> Dict[str, LongTensor]:
