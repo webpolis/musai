@@ -21,10 +21,9 @@ class MIDIDataset(Dataset):
                     ids[0], list) else ids  # first track (REMI, MMM)
             i = 0
             while i < len(tokens):
-                if i >= len(tokens) - min_seq_len:
-                    break  # last sample is too short
-                samples.append(LongTensor(tokens[i:i + max_seq_len]))
-                i += len(samples[-1])  # could be replaced with max_seq_len
+                # samples.append(LongTensor(tokens[i:i + max_seq_len]))
+                # i += len(samples[-1])  # could be replaced with max_seq_len
+                samples.append(tokens[i])
 
         self.data = samples
         self.ctx_len = max_seq_len
