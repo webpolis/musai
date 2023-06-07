@@ -36,9 +36,10 @@ if 'RWKV_JIT_ON' in os.environ and os.environ['RWKV_JIT_ON'] == '1':
 CUDA compilation
 """
 T_MAX = int(os.environ['RWKV_T_MAX'])
+CUDA_SRC_PATH = f'{os.path.dirname(__file__)}/cuda'
 
 if os.environ['RWKV_FLOAT_MODE'] == 'bf16':
-    wkv_cuda = load(name=f'wkv_{T_MAX}_bf16', sources=['cuda/wkv_op_bf16.cpp', 'cuda/wkv_cuda_bf16.cu'], verbose=True, extra_cuda_cflags=[
+    wkv_cuda = load(name=f'wkv_{T_MAX}_bf16', sources=[f'{CUDA_SRC_PATH}/wkv_op_bf16.cpp', f'{CUDA_SRC_PATH}/wkv_cuda_bf16.cu'], verbose=True, extra_cuda_cflags=[
                     '-t 4', '-std=c++17', '-res-usage', '--maxrregcount 60', '--use_fast_math', '-O3', '-Xptxas -O3', '--extra-device-vectorization', f'-DTmax={T_MAX}'])
 
     class WKV(torch.autograd.Function):
@@ -81,7 +82,7 @@ if os.environ['RWKV_FLOAT_MODE'] == 'bf16':
             gu = torch.sum(gu, dim=0)
             return (None, None, None, gw, gu, gk, gv)
 else:
-    wkv_cuda = load(name=f'wkv_{T_MAX}', sources=['cuda/wkv_op.cpp', 'cuda/wkv_cuda.cu'], verbose=True, extra_cuda_cflags=[
+    wkv_cuda = load(name=f'wkv_{T_MAX}', sources=[f'{CUDA_SRC_PATH}/wkv_op.cpp', f'{CUDA_SRC_PATH}/wkv_cuda.cu'], verbose=True, extra_cuda_cflags=[
                     '-res-usage', '--maxrregcount 60', '--use_fast_math', '-O3', '-Xptxas -O3', '--extra-device-vectorization', f'-DTmax={T_MAX}'])
 
     class WKV(torch.autograd.Function):
