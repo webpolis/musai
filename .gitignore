@@ -4,3 +4,4 @@ __pycache__
 lightning_logs/
 *.pth
 *.log
+out/
