@@ -81,7 +81,7 @@ LR_DECAY = 5e-6
 
 os.environ['RWKV_JIT_ON'] = '0'
 os.environ['RWKV_FLOAT_MODE'] = PRECISION
-os.environ['RWKV_T_MAX'] = str(CTX_LEN)
+os.environ['RWKV_T_MAX'] = str(int(CTX_LEN/2))
 
 
 def save_pth(dd, ff):
