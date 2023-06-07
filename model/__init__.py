@@ -180,7 +180,6 @@ class RWKV_TimeMix(MyModule):
                 decay_speed[h] = -5 + 8 * \
                     (h / (args.dim_att - 1)) ** (0.7 + 1.3 * ratio_0_to_1)
             self.time_decay = nn.Parameter(decay_speed)
-            # print(layer_id, self.time_decay.flatten()[:3].cpu().numpy(), '...', self.time_decay.flatten()[-3:].cpu().numpy())
 
             # fancy time_first
             zigzag = torch.tensor(
@@ -526,7 +525,6 @@ class RWKV(pl.LightningModule):
             if sum_mask == mask.shape[0]:
                 loss = F.cross_entropy(
                     logits.view(-1, logits.size(-1)), targets.view(-1))
-                # print('rank', self.global_rank, 'loss', loss.item())
             else:
                 loss = F.cross_entropy(
                     logits.view(-1, logits.size(-1)), targets.view(-1), reduction='none')
