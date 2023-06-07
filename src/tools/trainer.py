@@ -52,6 +52,10 @@ from torch.utils.data import DataLoader
 from dataset import MIDIDataset
 from tokenizer import get_tokenizer, TOKEN_PARAMS_NAME
 
+MODEL_SRC_PATH = f'{os.path.dirname(__file__)}/../model'
+sys.path.append(MODEL_SRC_PATH)
+
+
 """
 Some resets
 """
@@ -319,9 +323,8 @@ if __name__ == "__main__":
         params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
 
         # initialize model
-        sys.path.append('../model')
-
         from model.model import RWKV
+
         model_base = RWKV(params_obj)
         model_base.to(DEVICE)
 
