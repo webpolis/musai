@@ -44,9 +44,9 @@ class MIDIDataset(Dataset):
 
         return x, y
 
-    def __len__(self) -> int: return len(self.samples)
+    def __len__(self) -> int: return len(self.data)
 
     def __repr__(self): return self.__str__()
 
     def __str__(self) -> str: return 'No data loaded' if len(
-        self) == 0 else f'{len(self.samples)} samples'
+        self) == 0 else f'{len(self.data)} samples'
