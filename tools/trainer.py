@@ -271,7 +271,8 @@ if __name__ == "__main__":
             files_paths=midi_jsons,
             min_seq_len=16,
             max_seq_len=args.ctx_len,
-            no_labels=False
+            no_labels=False,
+            tokenizer=TOKENIZER
         )
         subset_train, subset_valid = create_subsets(DATASET, [0.3])
 
