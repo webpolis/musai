@@ -8,7 +8,8 @@ MusAI is an innovative project that leverages the power of machine learning to g
 
 - Full-featured tokenizer using parallelization via Ray
 - MIDI music generation using a combination of models (RWKV, LSTM, etc.)
-- Instrument based sequence generation (drums, bass, etc.)
+- Fine-tune or generate a new model from scratch using a custom dataset 
+- Instrument based sequence training and generation (drums, bass, etc.)
 - Adjustable parameters to customize the style and complexity of the generated music
 - High-quality output MIDI files for further refinement or direct use in your projects
 - Seamless integration with your favorite music production tools via VST bridge (@TODO)
