@@ -352,5 +352,3 @@ if __name__ == "__main__":
         trainer_pl.fit(model_base, data_loader)
     except KeyboardInterrupt:
         sys.exit(1)
-    except Exception as e:
-        logger.error(e)
