@@ -9,11 +9,14 @@ from tqdm import tqdm
 
 
 class MIDIDataset(Dataset):
-    def __init__(self, files_paths: List[Path], min_seq_len: int, max_seq_len: int, tokenizer: MIDITokenizer = None, no_labels=False):
+    def __init__(self, files_paths: List[Path], min_seq_len: int, max_seq_len: int,
+                 tokenizer: MIDITokenizer = None, no_labels=False, batches=None, epoch_steps=None):
         token_ids = []
         tokens = None
         self.no_labels = no_labels
         self.samples = []
+        self.batches = batches
+        self.epoch_steps = epoch_steps
 
         for file_path in tqdm(files_paths, desc=f'Loading data: {files_paths[0].parent}'):
             with open(file_path) as json_file:
@@ -48,7 +51,8 @@ class MIDIDataset(Dataset):
 
         return x, y
 
-    def __len__(self) -> int: return len(self.samples)
+    def __len__(self):
+        return self.epoch_steps * self.batches
 
     def __repr__(self): return self.__str__()
 

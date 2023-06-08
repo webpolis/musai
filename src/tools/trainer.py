@@ -275,7 +275,9 @@ if __name__ == "__main__":
             min_seq_len=16,
             max_seq_len=args.ctx_len,
             no_labels=False,
-            tokenizer=TOKENIZER
+            tokenizer=TOKENIZER,
+            batches=args.batches_num,
+            epoch_steps=args.steps_num
         )
         subset_train, subset_valid = create_subsets(DATASET, [0.3])
 
