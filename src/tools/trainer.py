@@ -76,8 +76,8 @@ N_EMBED = 512
 N_LAYER = 12
 EPOCHS = 6
 EPOCH_STEPS = 1000
-LR_RATE = 8e-4
-LR_DECAY = 5e-7
+LR_RATE = 1e-5
+LR_DECAY = 1e-6
 
 os.environ['RWKV_JIT_ON'] = '0'
 os.environ['RWKV_FLOAT_MODE'] = PRECISION
@@ -246,6 +246,10 @@ if __name__ == "__main__":
         '-p', '--epochs_num', default=EPOCHS, help='Number of epochs', type=int)
     arg_parser.add_argument(
         '-s', '--steps_num', default=EPOCH_STEPS, help='Number of steps per epoch', type=int)
+    arg_parser.add_argument(
+        '-i', '--lr_rate', default=str(LR_RATE), help='Learning rate. Initial & final derivates from it.', type=str)
+    arg_parser.add_argument(
+        '-d', '--lr_decay', default=str(LR_DECAY), help='Learning rate decay thru steps', type=str)
     arg_parser.add_argument('-a', '--attention', help='Enable tiny attention',
                             action='store_true', default=False)
     args = arg_parser.parse_args()
@@ -301,9 +305,9 @@ if __name__ == "__main__":
             'gradient_clip_val': 1.0,
             'head_qk': int(args.embed_num*2),
             'layerwise_lr': 1,
-            'lr_decay': LR_DECAY,
-            'lr_init': LR_RATE,
-            'lr_final': LR_RATE/80,
+            'lr_decay': float(args.lr_decay),
+            'lr_init': float(args.lr_rate)+5.9e-4,
+            'lr_final': float(args.lr_rate),
             'micro_bsz': args.batches_num,
             'my_pile_stage': 0,
             'my_pos_emb': 0,
