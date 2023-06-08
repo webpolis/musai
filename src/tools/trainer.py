@@ -81,7 +81,6 @@ LR_DECAY = 5e-6
 
 os.environ['RWKV_JIT_ON'] = '0'
 os.environ['RWKV_FLOAT_MODE'] = PRECISION
-os.environ['RWKV_T_MAX'] = str(CTX_LEN)
 
 
 def save_pth(dd, ff):
@@ -323,6 +322,7 @@ if __name__ == "__main__":
         params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
 
         # initialize model
+        os.environ['RWKV_T_MAX'] = str(args.ctx_len)
         from model import RWKV
 
         model_base = RWKV(params_obj)
