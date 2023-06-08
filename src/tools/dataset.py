@@ -14,7 +14,6 @@ class MIDIDataset(Dataset):
         token_ids = []
         tokens = None
         self.no_labels = no_labels
-        self.samples = []
         self.batches = batches
         self.epoch_steps = epoch_steps
 
@@ -24,14 +23,6 @@ class MIDIDataset(Dataset):
                 tokens = ids[0] if isinstance(
                     ids[0], list) else ids  # first track (REMI, MMM)
                 token_ids += tokens
-
-            i = 0
-            while i < len(tokens):
-                if i >= len(tokens) - min_seq_len:
-                    break  # last sample is too short
-
-                self.samples.append(LongTensor(tokens[i:i + max_seq_len]))
-                i += len(self.samples[-1])  # could be replaced with max_seq_len
 
         self.data = token_ids
         self.ctx_len = max_seq_len
