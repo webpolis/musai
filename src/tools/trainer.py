@@ -246,6 +246,8 @@ if __name__ == "__main__":
         '-p', '--epochs_num', default=EPOCHS, help='Number of epochs', type=int)
     arg_parser.add_argument(
         '-s', '--steps_num', default=EPOCH_STEPS, help='Number of steps per epoch', type=int)
+    arg_parser.add_argument('-a', '--attention', help='Enable tiny attention',
+                            action='store_true', default=False)
     args = arg_parser.parse_args()
 
     if args.tokens_path == None:
@@ -314,8 +316,8 @@ if __name__ == "__main__":
             'proj_dir': args.output_path,
             'real_bsz':  args.batches_num,
             'strategy': 'ddp_find_unused_parameters_false',
-            'tiny_att_dim': -1,  # int(N_EMBED/4),# model.py:406
-            'tiny_att_layer': -1,  # model.py:406
+            'tiny_att_dim': -1 if not args.attention else int(N_EMBED/4),
+            'tiny_att_layer': -1 if not args.attention else args.layers_num-1,  # model.py:406
             'vocab_size': len(TOKENIZER),
             'wandb': '',
             'warmup_steps': 10,
