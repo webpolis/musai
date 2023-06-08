@@ -77,7 +77,7 @@ N_LAYER = 12
 EPOCHS = 6
 EPOCH_STEPS = 1000
 LR_RATE = 8e-4
-LR_DECAY = 5e-6
+LR_DECAY = 5e-7
 
 os.environ['RWKV_JIT_ON'] = '0'
 os.environ['RWKV_FLOAT_MODE'] = PRECISION
@@ -317,7 +317,7 @@ if __name__ == "__main__":
             'real_bsz':  args.batches_num,
             'strategy': 'ddp_find_unused_parameters_false',
             'tiny_att_dim': -1 if not args.attention else int(N_EMBED/4),
-            'tiny_att_layer': -1 if not args.attention else args.layers_num-1,  # model.py:406
+            'tiny_att_layer': -1 if not args.attention else 0,  # model.py:406
             'vocab_size': len(TOKENIZER),
             'wandb': '',
             'warmup_steps': 10,
