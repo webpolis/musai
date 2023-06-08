@@ -10,18 +10,27 @@ from tqdm import tqdm
 
 class MIDIDataset(Dataset):
     def __init__(self, files_paths: List[Path], min_seq_len: int, max_seq_len: int, tokenizer: MIDITokenizer = None, no_labels=False):
-        samples = []
+        token_ids = []
         tokens = None
         self.no_labels = no_labels
+        self.samples = []
 
         for file_path in tqdm(files_paths, desc=f'Loading data: {files_paths[0].parent}'):
             with open(file_path) as json_file:
                 ids = json.load(json_file)['ids']
                 tokens = ids[0] if isinstance(
                     ids[0], list) else ids  # first track (REMI, MMM)
-                samples += tokens
+                token_ids += tokens
 
-        self.data = samples
+            i = 0
+            while i < len(tokens):
+                if i >= len(tokens) - min_seq_len:
+                    break  # last sample is too short
+
+                self.samples.append(LongTensor(tokens[i:i + max_seq_len]))
+                i += len(self.samples[-1])  # could be replaced with max_seq_len
+
+        self.data = token_ids
         self.ctx_len = max_seq_len
         self.vocab_size = len(tokenizer)
         self.data_size = len(self.data)
@@ -39,7 +48,7 @@ class MIDIDataset(Dataset):
 
         return x, y
 
-    def __len__(self) -> int: return len(self.data)
+    def __len__(self) -> int: return len(self.samples)
 
     def __repr__(self): return self.__str__()
 
