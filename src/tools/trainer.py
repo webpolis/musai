@@ -299,7 +299,7 @@ if __name__ == "__main__":
             'eight_bits': False,  # experimental
             'epoch_begin': 0,
             'epoch_count': args.epochs_num,
-            'epoch_save': 1,
+            'epoch_save': 2,
             'epoch_steps': args.steps_num,
             'grad_cp': 0,  # model.py:530
             'gradient_clip_val': 1.0,
@@ -326,6 +326,8 @@ if __name__ == "__main__":
             'wandb': '',
             'warmup_steps': 10,
         }
+
+        logger.info(params)
 
         params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
 
