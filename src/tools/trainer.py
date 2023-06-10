@@ -8,7 +8,7 @@ This file is part of MusAI, a project for generating MIDI music using
 a combination of machine learning algorithms.
 
 Below is a monolitic script that performs the training over an already 
-generated dataset of tokens (via the tokenizer script) and saves the 
+generated dataset of tokens (via the tokenizer.py script) and saves the 
 model in a defined output directory.
 
 MIT License
