@@ -1,10 +1,9 @@
 import types
 import torch
-import math
+import numpy as np
 import os
 import gc
-from torch.nn import functional as F
-import torch.nn as nn
+from torch.nn import functional as F, Module
 from typing import List, Dict
 
 """
@@ -19,7 +18,7 @@ def __nop(ob):
 """
 Setup JIT
 """
-BaseModule = nn.Module
+BaseModule = Module
 JitFunction = __nop
 
 if 'RWKV_JIT_ON' in os.environ and os.environ['RWKV_JIT_ON'] == '1':
@@ -29,6 +28,7 @@ if 'RWKV_JIT_ON' in os.environ and os.environ['RWKV_JIT_ON'] == '1':
 
 DEBUG_TIME = False   # True False - show trained time-coeffs
 RWKV_RESCALE_LAYER = 6  # set x=x/2 every X layer
+
 
 class RWKV_RNN(BaseModule):
     def __init__(self, args):
@@ -242,3 +242,62 @@ class RWKV_RNN(BaseModule):
             x = w.head.weight @ x
 
             return x.float(), state
+
+
+def sample_logits(logits, temperature=1.0, top_p=0.85, top_k=0):
+    probs = F.softmax(logits.float(), dim=-1)
+    top_k = int(top_k)
+
+    if probs.device == torch.device('cpu'):
+        probs = probs.numpy()
+        sorted_ids = np.argsort(probs)
+        sorted_probs = probs[sorted_ids][::-1]
+        cumulative_probs = np.cumsum(sorted_probs)
+        cutoff = float(sorted_probs[np.argmax(cumulative_probs > top_p)])
+        probs[probs < cutoff] = 0
+        if top_k < len(probs) and top_k > 0:
+            probs[sorted_ids[:-top_k]] = 0
+        if temperature != 1.0:
+            probs = probs ** (1.0 / temperature)
+        probs = probs / np.sum(probs)
+        out = np.random.choice(a=len(probs), p=probs)
+
+        return int(out)
+    else:
+        sorted_ids = torch.argsort(probs)
+        sorted_probs = probs[sorted_ids]
+        sorted_probs = torch.flip(sorted_probs, dims=(0,))
+        cumulative_probs = torch.cumsum(sorted_probs, dim=-1).cpu().numpy()
+        cutoff = float(sorted_probs[np.argmax(cumulative_probs > top_p)])
+        probs[probs < cutoff] = 0
+        if top_k < len(probs) and top_k > 0:
+            probs[sorted_ids[:-top_k]] = 0
+        if temperature != 1.0:
+            probs = probs ** (1.0 / temperature)
+        out = torch.multinomial(probs, num_samples=1)[0]
+
+        return int(out)
+
+
+def repetition_penalty(scores, history):
+    repetition_penalty = 1.1  # standard LLM repetition penalty. 1.0 = no penalty
+    repetition_view_length = 256  # how far back to look for repetitions
+    max_penalty = 1.5  # maximum penalty to apply. 1.0 = no penalty
+    decay_factor = 0.99  # how much to decay the penalty by, depending on how far back. 1.0 = no decay
+    repetition_ignore_ids = []  # ids to ignore when looking for repetitions
+    repetition_context = torch.tensor(
+        history[-repetition_view_length:]).to(scores.device)
+
+    # Exponential repetition penalty (accounts for recency and frequency)
+    decays = torch.pow(torch.full_like(repetition_context, decay_factor, dtype=scores.dtype), torch.arange(
+        0, repetition_context.shape[-1], device=scores.device, dtype=scores.dtype)).flip(-1)
+    mask = torch.zeros_like(scores)
+    mask.scatter_add_(-1, repetition_context, decays)
+    mask[repetition_ignore_ids] = 0
+    penalty_factor = torch.pow(torch.where(
+        scores < 0, repetition_penalty, 1 / repetition_penalty), mask)
+    penalty_factor = torch.clamp(penalty_factor, torch.tensor(
+        1.0 / max_penalty, device=penalty_factor.device), torch.tensor(max_penalty, device=penalty_factor.device))
+    scores = scores * penalty_factor
+
+    return scores
