@@ -279,12 +279,11 @@ def sample_logits(logits, temperature=1.0, top_p=0.85, top_k=0):
         return int(out)
 
 
-def repetition_penalty(scores, history):
+def repetition_penalty(scores, history, ignore_tokens = []):
     repetition_penalty = 1.1  # standard LLM repetition penalty. 1.0 = no penalty
     repetition_view_length = 256  # how far back to look for repetitions
     max_penalty = 1.5  # maximum penalty to apply. 1.0 = no penalty
     decay_factor = 0.99  # how much to decay the penalty by, depending on how far back. 1.0 = no decay
-    repetition_ignore_ids = []  # ids to ignore when looking for repetitions
     repetition_context = torch.tensor(
         history[-repetition_view_length:]).to(scores.device)
 
@@ -293,7 +292,7 @@ def repetition_penalty(scores, history):
         0, repetition_context.shape[-1], device=scores.device, dtype=scores.dtype)).flip(-1)
     mask = torch.zeros_like(scores)
     mask.scatter_add_(-1, repetition_context, decays)
-    mask[repetition_ignore_ids] = 0
+    mask[ignore_tokens] = 0
     penalty_factor = torch.pow(torch.where(
         scores < 0, repetition_penalty, 1 / repetition_penalty), mask)
     penalty_factor = torch.clamp(penalty_factor, torch.tensor(
