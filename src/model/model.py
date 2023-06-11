@@ -3,7 +3,6 @@ import math
 import importlib
 import torch
 import torch.nn as nn
-import bitsandbytes as bnb
 import lightning.pytorch as pl
 from torch.utils.cpp_extension import load
 from torch.nn import functional as F
@@ -196,20 +195,10 @@ class RWKV_TimeMix(BaseModule):
 
         self.time_shift = nn.ZeroPad2d((0, 0, 1, -1))
 
-        if args.eight_bits:
-            self.key = bnb.nn.Linear8bitLt(
-                args.n_embd, args.dim_att, bias=False)
-            self.value = bnb.nn.Linear8bitLt(
-                args.n_embd, args.dim_att, bias=False)
-            self.receptance = bnb.nn.Linear8bitLt(
-                args.n_embd, args.dim_att, bias=False)
-            self.output = bnb.nn.Linear8bitLt(
-                args.dim_att, args.n_embd, bias=False)
-        else:
-            self.key = nn.Linear(args.n_embd, args.dim_att, bias=False)
-            self.value = nn.Linear(args.n_embd, args.dim_att, bias=False)
-            self.receptance = nn.Linear(args.n_embd, args.dim_att, bias=False)
-            self.output = nn.Linear(args.dim_att, args.n_embd, bias=False)
+        self.key = nn.Linear(args.n_embd, args.dim_att, bias=False)
+        self.value = nn.Linear(args.n_embd, args.dim_att, bias=False)
+        self.receptance = nn.Linear(args.n_embd, args.dim_att, bias=False)
+        self.output = nn.Linear(args.dim_att, args.n_embd, bias=False)
 
     @JitFunction
     def jit_func(self, x):
@@ -247,17 +236,9 @@ class RWKV_ChannelMix(BaseModule):
             self.time_mix_k = nn.Parameter(torch.pow(ddd, ratio_1_to_almost0))
             self.time_mix_r = nn.Parameter(torch.pow(ddd, ratio_1_to_almost0))
 
-        if args.eight_bits:
-            self.key = bnb.nn.Linear8bitLt(
-                args.n_embd, args.dim_ffn, bias=False)
-            self.receptance = bnb.nn.Linear8bitLt(
-                args.n_embd, args.n_embd, bias=False)
-            self.value = bnb.nn.Linear8bitLt(
-                args.dim_ffn, args.n_embd, bias=False)
-        else:
-            self.key = nn.Linear(args.n_embd, args.dim_ffn, bias=False)
-            self.receptance = nn.Linear(args.n_embd, args.n_embd, bias=False)
-            self.value = nn.Linear(args.dim_ffn, args.n_embd, bias=False)
+        self.key = nn.Linear(args.n_embd, args.dim_ffn, bias=False)
+        self.receptance = nn.Linear(args.n_embd, args.n_embd, bias=False)
+        self.value = nn.Linear(args.dim_ffn, args.n_embd, bias=False)
 
     @JitFunction
     def forward(self, x):
@@ -363,12 +344,8 @@ class RWKV(pl.LightningModule):
         if not hasattr(args, 'tiny_att_dim'):
             args.tiny_att_dim = -1
 
-        if not self.args.eight_bits:
-            self.emb = nn.Embedding(
-                args.vocab_size, args.n_embd, padding_idx=args.padding_idx)
-        else:
-            self.emb = bnb.nn.Embedding(
-                args.vocab_size, args.n_embd, padding_idx=args.padding_idx)
+        self.emb = nn.Embedding(
+            args.vocab_size, args.n_embd, padding_idx=args.padding_idx)
 
         self.blocks = nn.ModuleList([Block(args, i)
                                     for i in range(args.n_layer)])
@@ -382,14 +359,8 @@ class RWKV(pl.LightningModule):
             self.head = nn.Linear(args.n_embd, args.vocab_size, bias=False)
 
         if args.head_qk > 0:
-            if False:  # args.eight_bits:
-                self.head_q = bnb.nn.Linear8bitLt(
-                    args.n_embd, args.head_qk, bias=False)
-                self.head_k = bnb.nn.Linear8bitLt(
-                    args.n_embd, args.head_qk, bias=False)
-            else:
-                self.head_q = nn.Linear(args.n_embd, args.head_qk, bias=False)
-                self.head_k = nn.Linear(args.n_embd, args.head_qk, bias=False)
+            self.head_q = nn.Linear(args.n_embd, args.head_qk, bias=False)
+            self.head_k = nn.Linear(args.n_embd, args.head_qk, bias=False)
 
             self.register_buffer('copy_mask', torch.tril(
                 torch.ones(args.ctx_len, args.ctx_len)))
@@ -450,10 +421,7 @@ class RWKV(pl.LightningModule):
         if self.deepspeed_offload:
             return DeepSpeedCPUAdam(optim_groups, lr=self.args.lr_init, betas=self.args.betas, eps=self.args.adam_eps, bias_correction=True, adamw_mode=False, weight_decay=0, amsgrad=False)
 
-        if self.args.eight_bits:
-            return bnb.optim.Adam8bit(optim_groups, lr=self.args.lr_init, betas=self.args.betas, eps=self.args.adam_eps, weight_decay=0, amsgrad=False, optim_bits=8)
-        else:
-            return FusedAdam(optim_groups, lr=self.args.lr_init, betas=self.args.betas, eps=self.args.adam_eps, bias_correction=True, adam_w_mode=False, weight_decay=0, amsgrad=False)
+        return FusedAdam(optim_groups, lr=self.args.lr_init, betas=self.args.betas, eps=self.args.adam_eps, bias_correction=True, adam_w_mode=False, weight_decay=0, amsgrad=False)
 
     @property
     def deepspeed_offload(self) -> bool:
