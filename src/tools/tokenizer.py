@@ -37,6 +37,7 @@ import os
 import re
 import argparse
 import ray
+from itertools import chain
 from loguru import logger
 from pathlib import Path
 from miditok import REMIPlus, MMM
@@ -133,6 +134,14 @@ def get_programs_from_classes(classes):
                 INSTRUMENT_CLASSES[i]['program_range'])
 
     return programs
+
+
+def parse_bpe_tokens(tokenizer, tokens):
+    seq = [next(key for key, value in tokenizer.vocab_bpe.items() if value == tid)
+           for tid in tokens]
+    tseq = [tokenizer._vocab_bpe_bytes_to_tokens[bpetoken] for bpetoken in seq]
+
+    return list(chain.from_iterable(tseq))
 
 
 def get_tokenizer(params=None, algo='MMM', programs=None):
