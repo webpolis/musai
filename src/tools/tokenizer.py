@@ -72,6 +72,11 @@ logger.add('tokenizer_errors_{time}.log', delay=True,
            backtrace=True, diagnose=True, level='ERROR', rotation='10 MB')
 
 # begin program
+
+
+def deco(func): return func
+
+
 if __name__ == "__main__":
     # parse command line arguments
     arg_parser = argparse.ArgumentParser()
@@ -96,6 +101,9 @@ if __name__ == "__main__":
     arg_parser.add_argument(
         '-d', '--debug', help='Debug mode.', action='store_true', default=False)
     args = arg_parser.parse_args()
+
+    # callback handlers via Ray or not
+    deco = ray.remote if not args.debug else deco
 
 # define some functions
 
@@ -165,122 +173,121 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
     return tokenizer
 
 
-# begin program
-if __name__ == "__main__":
-    # callback handlers via Ray or not
-    def deco(func): return func
-    deco = ray.remote if not args.debug else deco
+@deco
+def process_midi(midi_path, classes=None, minlength=16, debug=False):
+    try:
+        midi = MidiFile(midi_path)
+    except:
+        return None
 
-    # declare some context' dependent functions
-    @deco
-    def process_midi(midi_path, classes=None, minlength=16, debug=False):
-        try:
-            midi = MidiFile(midi_path)
-        except:
-            return None
+    if (midi.max_tick/midi.ticks_per_beat) < minlength:
+        return None
 
-        if (midi.max_tick/midi.ticks_per_beat) < minlength:
-            return None
+    if midi.ticks_per_beat < max(BEAT_RES.values()) * 4:
+        return None
 
-        if midi.ticks_per_beat < max(BEAT_RES.values()) * 4:
-            return None
+    programs = get_midi_programs(midi)
 
-        programs = get_midi_programs(midi)
+    # remove unwanted tracks
+    programs_to_delete = []
 
-        # remove unwanted tracks
-        programs_to_delete = []
+    if classes is None:
+        for ic in CLASS_EFFECTS:
+            programs_to_delete += list(
+                INSTRUMENT_CLASSES[ic]['program_range'])
+    else:
+        classes = classes.strip().split(',')
+        classes = [int(c.strip()) for c in classes]
+        programs_to_delete = get_programs_from_classes(classes)
 
-        if classes is None:
-            for ic in CLASS_EFFECTS:
-                programs_to_delete += list(
-                    INSTRUMENT_CLASSES[ic]['program_range'])
-        else:
-            classes = classes.strip().split(',')
-            classes = [int(c.strip()) for c in classes]
-            programs_to_delete = get_programs_from_classes(classes)
+    keep_programs = filter_programs(programs_to_delete)
 
-        keep_programs = filter_programs(programs_to_delete)
+    # remove unwanted tracks
+    merge_tracks_per_class(midi, valid_programs=keep_programs)
 
-        # remove unwanted tracks
-        merge_tracks_per_class(midi, valid_programs=keep_programs)
+    # discard empty songs
+    if len(midi.instruments) < 1:
+        return None
 
-        # discard empty songs
-        if len(midi.instruments) < 1:
-            return None
+    if classes is None:
+        # merge percussion/drums
+        merge_tracks_per_class(midi, CLASSES_PERCUSSION)
 
-        if classes is None:
-            # merge percussion/drums
-            merge_tracks_per_class(midi, CLASSES_PERCUSSION)
+        # merge synths
+        merge_tracks_per_class(midi, CLASSES_SYNTHS)
 
-            # merge synths
-            merge_tracks_per_class(midi, CLASSES_SYNTHS)
+        # merge strings
+        merge_tracks_per_class(midi, CLASSES_STRINGS)
 
-            # merge strings
-            merge_tracks_per_class(midi, CLASSES_STRINGS)
+        # merge guitar & bass
+        merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
 
-            # merge guitar & bass
-            merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
+    merge_same_program_tracks(midi.instruments)
 
-        # merge_same_program_tracks(midi.instruments)
-        midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
-                           str.lower(os.path.basename(midi_path)))
+    midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
+                       str.lower(os.path.basename(midi_path)))
 
-        programs = get_midi_programs(midi)
+    programs = get_midi_programs(midi)
 
-        midi_doc = {
-            'midi': midi,
-            'programs': programs,
-            'path': midi_path,
-            'name': midi_name
-        }
+    midi_doc = {
+        'midi': midi,
+        'programs': programs,
+        'path': midi_path,
+        'name': midi_name
+    }
 
-        if debug:
-            return midi_doc
-
-        ray_midi_ref = ray.put(midi_doc)
-
-        return ray_midi_ref
-
-    @deco
-    def tokenize_set(midi_doc):
-        midi = midi_doc['midi']
-        programs = midi_doc['programs']
-
-        try:
-            tokens = TOKENIZER.midi_to_tokens(
-                midi, apply_bpe_if_possible=args.bpe)
-
-            TOKENIZER.save_tokens(
-                tokens, f"{args.tokens_path}/{midi_doc['name']}.json", programs=programs)
-        except Exception as error:
-            return None
-
+    if debug:
         return midi_doc
 
-    def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlength=16, debug=False):
-        """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
+    ray_midi_ref = ray.put(midi_doc)
 
-        :return: A dictionary containing a set of {'midi': ..., 'programs': ..., 'path': ...} 
-                for each MIDI file in the collection.
-        :rtype: dict
-        """
-        midi_file_paths = list(Path(midis_path).glob(midis_glob))
+    return ray_midi_ref
 
-        logger.info(
-            'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
 
-        # process MIDIs via Ray
-        process_call = process_midi.remote if not debug else process_midi
-        ray_refs = [process_call(midi_path, classes, minlength, debug)
-                    for midi_path in midi_file_paths]
+@deco
+def tokenize_set(midi_doc):
+    midi = midi_doc['midi']
+    programs = midi_doc['programs']
 
-        if debug:
-            return [ref for ref in ray_refs if ref != None]
+    try:
+        tokens = TOKENIZER.midi_to_tokens(
+            midi, apply_bpe_if_possible=args.bpe)
 
-        ray_midi_refs = [ref for ref in tqdm(to_iterator(ray_refs, debug))]
+        TOKENIZER.save_tokens(
+            tokens, f"{args.tokens_path}/{midi_doc['name']}.json", programs=programs)
+    except Exception as error:
+        return None
 
-        return [ref for ref in ray_midi_refs if ref != None]
+    return midi_doc
 
+
+def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlength=16, debug=False):
+    """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
+
+    :return: A dictionary containing a set of {'midi': ..., 'programs': ..., 'path': ...} 
+            for each MIDI file in the collection.
+    :rtype: dict
+    """
+    midi_file_paths = list(Path(midis_path).glob(midis_glob))
+
+    logger.info(
+        'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
+
+    # process MIDIs via Ray
+    process_call = process_midi.remote if not debug else process_midi
+    ray_refs = [process_call(midi_path, classes, minlength, debug)
+                for midi_path in midi_file_paths]
+
+    if debug:
+        return [ref for ref in ray_refs if ref != None]
+
+    ray_midi_refs = [ref for ref in tqdm(to_iterator(ray_refs, debug))]
+
+    return [ref for ref in ray_midi_refs if ref != None]
+
+
+# begin program
+if __name__ == "__main__":
     if not args.debug:
         # starts orchestration
         ray.init()
