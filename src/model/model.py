@@ -351,7 +351,6 @@ class RWKV(pl.LightningModule):
                                     for i in range(args.n_layer)])
 
         self.ln_out = nn.LayerNorm(args.n_embd)
-        self.dropout = nn.Dropout(p=args.dropout_p)
 
         if hasattr(args, 'dropout_p'):
             self.dropout = nn.Dropout(p=args.dropout_p)
