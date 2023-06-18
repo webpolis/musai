@@ -268,24 +268,26 @@ def process_midi(midi_path, classes=None, minlength=16, debug=False):
 
 
 @deco
-def tokenize_set(midi_doc):
+def tokenize_set(midi_doc, tokens_path, tokenizer, bpe=False):
+    midi = None
+
     try:
         midi = MidiFile(midi_doc['path'])
     except:
         return None
 
+    tokens_cfg = f"{tokens_path}/{midi_doc['name']}.json"
     programs = midi_doc['programs']
 
     try:
-        tokens = TOKENIZER.midi_to_tokens(
-            midi, apply_bpe_if_possible=args.bpe)
-
-        TOKENIZER.save_tokens(
-            tokens, f"{args.tokens_path}/{midi_doc['name']}.json", programs=programs)
+        tokens = tokenizer.midi_to_tokens(midi, apply_bpe_if_possible=bpe)
+        tokenizer.save_tokens(tokens, tokens_cfg, programs=programs)
     except Exception as error:
         return None
+    finally:
+        del midi
 
-    return midi_doc
+    return tokens_cfg
 
 
 def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlength=16, debug=False):
@@ -345,7 +347,7 @@ if __name__ == "__main__":
 
         # process tokenization via Ray
         tokenize_call = tokenize_set if args.debug else tokenize_set.remote
-        ray_refs = [tokenize_call(ray_midi_ref)
+        ray_refs = [tokenize_call(ray_midi_ref, args.tokens_path, TOKENIZER, args.bpe)
                     for ray_midi_ref in MIDI_COLLECTION_REFS]
         ray_tokenized_refs = [
             ray_tokenized_ref for ray_tokenized_ref in tqdm(to_iterator(ray_refs, args.debug))]
