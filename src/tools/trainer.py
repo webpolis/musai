@@ -296,6 +296,7 @@ if __name__ == "__main__":
             'ctx_len': args.ctx_len,
             'dim_att': args.embed_num,
             'dim_ffn': args.embed_num*4,
+            'dropout_p': 0.25,
             'eight_bits': False,  # experimental
             'epoch_begin': 0,
             'epoch_count': args.epochs_num,

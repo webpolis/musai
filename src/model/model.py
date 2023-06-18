@@ -351,12 +351,12 @@ class RWKV(pl.LightningModule):
                                     for i in range(args.n_layer)])
 
         self.ln_out = nn.LayerNorm(args.n_embd)
+        self.dropout = nn.Dropout(p=args.dropout_p)
 
-        if False:  # if args.eight_bits:
-            self.head = bnb.nn.Linear8bitLt(
-                args.n_embd, args.vocab_size, bias=False)
-        else:
-            self.head = nn.Linear(args.n_embd, args.vocab_size, bias=False)
+        if hasattr(args, 'dropout_p'):
+            self.dropout = nn.Dropout(p=args.dropout_p)
+
+        self.head = nn.Linear(args.n_embd, args.vocab_size, bias=False)
 
         if args.head_qk > 0:
             self.head_q = nn.Linear(args.n_embd, args.head_qk, bias=False)
@@ -438,19 +438,28 @@ class RWKV(pl.LightningModule):
 
         x = self.emb(idx)
         x_emb = x
+        has_dropout = hasattr(args, 'dropout_p')
 
         if args.tiny_att_dim > 0:
-            for block in self.blocks:
+            for bb, block in enumerate(self.blocks):
                 if args.grad_cp == 1:
                     x = deepspeed.checkpointing.checkpoint(block, x, x_emb)
                 else:
                     x = block(x, x_emb)
+
+                # apply dropout in the middle
+                if has_dropout and bb == ((len(self.blocks)/2)-1):
+                    x = self.dropout(x)
         else:
-            for block in self.blocks:
+            for bb, block in enumerate(self.blocks):
                 if args.grad_cp == 1:
                     x = deepspeed.checkpointing.checkpoint(block, x)
                 else:
                     x = block(x)
+
+                # apply dropout in the middle
+                if has_dropout and bb == ((len(self.blocks)/2)-1):
+                    x = self.dropout(x)
 
         x = self.ln_out(x)
 
