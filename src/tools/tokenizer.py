@@ -37,6 +37,8 @@ import os
 import re
 import argparse
 import ray
+import psutil
+import gc
 from itertools import chain
 from loguru import logger
 from pathlib import Path
@@ -107,6 +109,18 @@ if __name__ == "__main__":
     deco = ray.remote if not args.debug else deco
 
 # define some functions
+
+
+def auto_garbage_collect(pct=80.0):
+    """
+    auto_garbage_collection - Call the garbage collection if memory used is greater than 80% of total available memory.
+                              This is called to deal with an issue in Ray not freeing up used memory.
+
+        pct - Default value of 80%.  Amount of memory in use that triggers the garbage collection call.
+    """
+    if psutil.virtual_memory().percent >= pct:
+        gc.collect()
+    return
 
 
 def to_iterator(obj_ids, debug=False):
@@ -266,6 +280,8 @@ def tokenize_set(midi_doc):
             tokens, f"{args.tokens_path}/{midi_doc['name']}.json", programs=programs)
     except Exception as error:
         return None
+    finally:
+        auto_garbage_collect()
 
     return midi_doc
 
