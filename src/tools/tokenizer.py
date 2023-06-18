@@ -254,7 +254,6 @@ def process_midi(midi_path, classes=None, minlength=16, debug=False):
     programs = get_midi_programs(midi)
 
     midi_doc = {
-        'midi': midi,
         'programs': programs,
         'path': midi_path,
         'name': midi_name
@@ -270,7 +269,11 @@ def process_midi(midi_path, classes=None, minlength=16, debug=False):
 
 @deco
 def tokenize_set(midi_doc):
-    midi = midi_doc['midi']
+    try:
+        midi = MidiFile(midi_doc['path'])
+    except:
+        return None
+
     programs = midi_doc['programs']
 
     try:
@@ -288,7 +291,7 @@ def tokenize_set(midi_doc):
 def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlength=16, debug=False):
     """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
 
-    :return: A dictionary containing a set of {'midi': ..., 'programs': ..., 'path': ...} 
+    :return: A dictionary containing a set of {'programs': ..., 'path': ..., 'name': ...} 
             for each MIDI file in the collection.
     :rtype: dict
     """
