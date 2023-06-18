@@ -76,8 +76,8 @@ N_EMBED = 768
 N_LAYER = 10
 EPOCHS = 100
 EPOCH_STEPS = 250
-LR_RATE = 1e-5
-LR_DECAY = 1e-6
+LR_RATE = 1.5e-5
+LR_DECAY = 5e-6
 
 os.environ['RWKV_JIT_ON'] = '0'
 os.environ['RWKV_FLOAT_MODE'] = PRECISION
@@ -306,8 +306,8 @@ if __name__ == "__main__":
             'head_qk': int(args.embed_num*2),
             'layerwise_lr': 1,
             'lr_decay': float(args.lr_decay),
-            'lr_init': float(args.lr_rate)+5.9e-4,
-            'lr_final': float(args.lr_rate),
+            'lr_init': float(args.lr_rate),
+            'lr_final': float(args.lr_rate/100),
             'micro_bsz': args.batches_num,
             'my_pile_stage': 0,
             'my_pos_emb': 0,
@@ -321,7 +321,7 @@ if __name__ == "__main__":
             'real_bsz':  args.batches_num,
             'strategy': 'ddp_find_unused_parameters_false',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
-            'tiny_att_layer': -1 if not args.attention else int(args.layers_num/2),  # model.py:406
+            'tiny_att_layer': -1 if not args.attention else int(args.layers_num/2),
             'vocab_size': len(TOKENIZER),
             'wandb': '',
             'warmup_steps': 10,
