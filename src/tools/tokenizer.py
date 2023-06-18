@@ -120,6 +120,7 @@ def auto_garbage_collect(pct=80.0):
     """
     if psutil.virtual_memory().percent >= pct:
         gc.collect()
+
     return
 
 
@@ -280,8 +281,6 @@ def tokenize_set(midi_doc):
             tokens, f"{args.tokens_path}/{midi_doc['name']}.json", programs=programs)
     except Exception as error:
         return None
-    finally:
-        auto_garbage_collect()
 
     return midi_doc
 
@@ -315,7 +314,7 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlengt
 if __name__ == "__main__":
     if not args.debug:
         # starts orchestration
-        ray.init()
+        ray.init(num_cpus=psutil.cpu_count()-1)
 
         MIDI_COLLECTION_REFS = get_collection_refs(
             args.midis_path, args.midis_glob, args.classes, args.length)
