@@ -364,8 +364,7 @@ if __name__ == "__main__":
     if args.bpe:
         # Constructs the vocabulary with BPE, from the tokenized files
         tokens_bpe_path = f'{args.tokens_path}/bpe'
-        token_files_paths = [
-            f"{args.tokens_path}/{midi_doc['name']}.json" for midi_doc in ray_tokenized_refs if midi_doc != None]
+        token_files_paths = [tokens_cfg for tokens_cfg in ray_tokenized_refs if tokens_cfg != None]
 
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
