@@ -152,7 +152,7 @@ class train_callback(Callback):
                         project=args.wandb,
                         name=str(args.vocab_size) + "_" +
                         str(args.n_layer) + "_" + args.my_timestamp,
-                        config=args,
+                        config=args._asdict(),
                         save_code=False,
                     )
                     trainer.my_wandb = wandb
