@@ -319,7 +319,7 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlengt
 if __name__ == "__main__":
     if not args.debug:
         # starts orchestration
-        ray.init(num_cpus=psutil.cpu_count()-1)
+        ray.init(num_cpus=psutil.cpu_count())
 
         MIDI_COLLECTION_REFS = get_collection_refs(
             args.midis_path, args.midis_glob, args.classes, args.length)
