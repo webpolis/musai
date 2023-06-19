@@ -302,7 +302,7 @@ if __name__ == "__main__":
             'epoch_count': args.epochs_num,
             'epoch_save': 2,
             'epoch_steps': args.steps_num,
-            'grad_cp': 0,  # model.py:530
+            'grad_cp': 1,  # model.py:530
             'gradient_clip_val': 1.0,
             'head_qk': int(args.embed_num*2),
             'layerwise_lr': 1,
@@ -320,7 +320,7 @@ if __name__ == "__main__":
             'pre_ffn': 0,
             'proj_dir': args.output_path,
             'real_bsz':  args.batches_num,
-            'strategy': 'ddp_find_unused_parameters_false',
+            'strategy': 'deepspeed_stage_2_offload',#'ddp_find_unused_parameters_false',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num/2),
             'vocab_size': len(TOKENIZER),

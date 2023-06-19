@@ -403,8 +403,6 @@ if __name__ == "__main__":
         for token_file in tqdm(token_files_paths):
             try:
                 tokens = json.load(open(token_file, 'r'))['ids']
-
-                pass
             except KeyboardInterrupt:
                 break
             except Exception as e:
