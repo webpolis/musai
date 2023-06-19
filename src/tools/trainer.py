@@ -321,7 +321,7 @@ if __name__ == "__main__":
             'pre_ffn': 0,
             'proj_dir': args.output_path,
             'real_bsz':  args.batches_num,
-            'strategy': 'deepspeed_stage_2_offload',  # 'ddp_find_unused_parameters_false',
+            'strategy': 'ddp_find_unused_parameters_false',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num/2),
             'vocab_size': len(TOKENIZER),
