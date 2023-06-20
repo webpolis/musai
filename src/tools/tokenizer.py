@@ -197,7 +197,7 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
     return tokenizer
 
 
-@deco
+@deco(num_returns=1)
 def process_midi(midi_path, classes=None, minlength=16, debug=False):
     try:
         midi = MidiFile(midi_path)
@@ -259,16 +259,11 @@ def process_midi(midi_path, classes=None, minlength=16, debug=False):
         'name': midi_name
     }
 
-    if debug:
-        return midi_doc
-
-    ray_midi_ref = ray.put(midi_doc)
-
-    return ray_midi_ref
+    return midi_doc
 
 
 @deco
-def tokenize_set(midi_doc, tokens_path, tokenizer, bpe=False):
+def tokenize_set(midi_doc, tokens_path, tokenizer, bpe=False, debug=False):
     midi = None
 
     try:
@@ -307,30 +302,32 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlengt
     ray_refs = [process_call(midi_path, classes, minlength, debug)
                 for midi_path in midi_file_paths]
 
-    if debug:
-        return [ref for ref in ray_refs if ref != None]
-
-    ray_midi_refs = [ref for ref in tqdm(to_iterator(ray_refs, debug))]
-
-    return [ref for ref in ray_midi_refs if ref != None]
+    return [ref for ref in ray_refs if ref != None]
 
 
 # begin program
 if __name__ == "__main__":
+    MIDI_TITLES = []
+    MIDI_PROGRAMS = []
+
     if not args.debug:
         # starts orchestration
         ray.init(num_cpus=psutil.cpu_count())
 
         MIDI_COLLECTION_REFS = get_collection_refs(
             args.midis_path, args.midis_glob, args.classes, args.length)
-        MIDI_TITLES = [ray.get(ray_midi_ref)['name']
-                       for ray_midi_ref in MIDI_COLLECTION_REFS]
-        ray_tokenized_refs = None
+
+        for ray_midi_ref in MIDI_COLLECTION_REFS:
+            midi_doc = ray.get(ray_midi_ref)
+
+            if midi_doc != None:
+                MIDI_TITLES.append(midi_doc['name'])
+                MIDI_PROGRAMS.append(midi_doc['programs'])
     else:
         MIDI_COLLECTION_REFS = get_collection_refs(
             args.midis_path, args.midis_glob, args.classes, args.length, args.debug)
-        MIDI_TITLES = [midi_ref['name']
-                       for midi_ref in MIDI_COLLECTION_REFS]
+        MIDI_TITLES = [midi_ref['name'] for midi_ref in MIDI_COLLECTION_REFS]
+        MIDI_PROGRAMS = [midi_ref['programs'] for midi_ref in MIDI_COLLECTION_REFS]
 
     if args.process:
         logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
@@ -339,18 +336,18 @@ if __name__ == "__main__":
         Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
 
         # collect used programs
-        programs_used = [program[0] for program in list(set(reduce(
-            iconcat, [ray_midi_ref['programs'] for ray_midi_ref in to_iterator(MIDI_COLLECTION_REFS, args.debug)], [])))]
+        programs_used = [program[0]
+                         for program in list(set(reduce(iconcat, MIDI_PROGRAMS, [])))]
 
         # initializes tokenizer
         TOKENIZER = get_tokenizer(programs=programs_used)
 
         # process tokenization via Ray
         tokenize_call = tokenize_set if args.debug else tokenize_set.remote
-        ray_refs = [tokenize_call(ray_midi_ref, args.tokens_path, TOKENIZER, args.bpe)
-                    for ray_midi_ref in MIDI_COLLECTION_REFS]
-        ray_tokenized_refs = [
-            ray_tokenized_ref for ray_tokenized_ref in tqdm(to_iterator(ray_refs, args.debug))]
+        ray_tokenized_refs = [tokenize_call(ray_midi_ref, args.tokens_path, TOKENIZER, args.bpe, args.debug)
+                              for ray_midi_ref in MIDI_COLLECTION_REFS]
+        token_files_paths = [ray.get(ray_t_ref)
+                             for ray_t_ref in ray_tokenized_refs if ray_t_ref != None]
 
         logger.info('Vocab size (no BPE): {vocab_size}',
                     vocab_size=len(TOKENIZER.vocab))
@@ -364,26 +361,23 @@ if __name__ == "__main__":
     if args.bpe:
         # Constructs the vocabulary with BPE, from the tokenized files
         tokens_bpe_path = f'{args.tokens_path}/bpe'
-        token_files_paths = [tokens_cfg for tokens_cfg in ray_tokenized_refs if tokens_cfg != None]
 
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
         ray.shutdown()
 
         if not args.process:
-            TOKENIZER = get_tokenizer(
-                params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
+            TOKENIZER = get_tokenizer(params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
 
         logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
             TOKENIZER.vocab))
 
         TOKENIZER.learn_bpe(
             vocab_size=int(len(TOKENIZER.vocab)*1.25),
-            tokens_paths=token_files_paths,
+            tokens_paths=[path for path in token_files_paths if path != None],
             start_from_empty_voc=False,
         )
 
-        # Converts the tokenized musics into tokens with BPE
         logger.info('Applying BPE...')
         TOKENIZER.apply_bpe_to_dataset(args.tokens_path, tokens_bpe_path)
 
