@@ -9,6 +9,7 @@ a combination of machine learning algorithms.
 
 Below is a monolitic script that constructs a corpora of tokens ready to be injected 
 into the model. Semantical processing, cleanup and sanitization happens here.
+It uses Ray for parallel processing.
 
 MIT License
 Copyright (c) [2023] [Nicolás Iglesias]
@@ -282,7 +283,7 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
     return tokenizer
 
 
-@deco(num_returns=1)
+@deco
 def process_midi(midi_path, pba: ActorHandle, classes=None, minlength=16, debug=False):
     midi_doc = None
     midi = None
