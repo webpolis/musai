@@ -303,7 +303,7 @@ if __name__ == "__main__":
             'epoch_count': args.epochs_num,
             'epoch_save': 2,
             'epoch_steps': args.steps_num,
-            'grad_cp': 1,  # model.py:530
+            'grad_cp': 0,  # model.py:530
             'gradient_clip_val': 1.0,
             'head_qk': int(args.embed_num*2),
             'layerwise_lr': 1,
