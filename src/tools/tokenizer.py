@@ -39,8 +39,11 @@ import argparse
 import ray
 import psutil
 import gc
+from asyncio import Event
+from ray.actor import ActorHandle
 from itertools import chain
 from loguru import logger
+from typing import Tuple
 from pathlib import Path
 from miditok import REMIPlus, MMM
 from miditok.constants import ADDITIONAL_TOKENS, BEAT_RES, INSTRUMENT_CLASSES
@@ -69,6 +72,88 @@ BINS_VELOCITY = (24)
 BINS_TEMPO = (24)
 
 TOKENIZER_ALGOS = ['REMI', 'MMM']
+
+# declare Ray related stuff
+
+
+@ray.remote
+class ProgressBarActor:
+    counter: int
+    delta: int
+    event: Event
+
+    def __init__(self) -> None:
+        self.counter = 0
+        self.delta = 0
+        self.event = Event()
+
+    def update(self, num_items_completed: int) -> None:
+        """Updates the ProgressBar with the incremental
+        number of items that were just completed.
+        """
+        self.counter += num_items_completed
+        self.delta += num_items_completed
+        self.event.set()
+
+    async def wait_for_update(self) -> Tuple[int, int]:
+        """Blocking call.
+
+        Waits until somebody calls `update`, then returns a tuple of
+        the number of updates since the last call to
+        `wait_for_update`, and the total number of completed items.
+        """
+        await self.event.wait()
+        self.event.clear()
+        saved_delta = self.delta
+        self.delta = 0
+        return saved_delta, self.counter
+
+    def get_counter(self) -> int:
+        """
+        Returns the total number of complete items.
+        """
+        return self.counter
+# Back on the local node, once you launch your remote Ray tasks, call
+# `print_until_done`, which will feed everything back into a `tqdm` counter.
+
+
+class ProgressBar:
+    progress_actor: ActorHandle
+    total: int
+    description: str
+    pbar: tqdm
+
+    def __init__(self, total: int, description: str = ""):
+        # Ray actors don't seem to play nice with mypy, generating
+        # a spurious warning for the following line,
+        # which we need to suppress. The code is fine.
+        self.progress_actor = ProgressBarActor.remote()  # type: ignore
+        self.total = total
+        self.description = description
+
+    @property
+    def actor(self) -> ActorHandle:
+        """Returns a reference to the remote `ProgressBarActor`.
+
+        When you complete tasks, call `update` on the actor.
+        """
+        return self.progress_actor
+
+    def print_until_done(self) -> None:
+        """Blocking call.
+
+        Do this after starting a series of remote Ray tasks, to which you've
+        passed the actor handle. Each of them calls `update` on the actor.
+        When the progress meter reaches 100%, this method returns.
+        """
+        pbar = tqdm(desc=self.description, total=self.total)
+        while True:
+            delta, counter = ray.get(self.actor.wait_for_update.remote())
+            pbar.update(delta)
+            if counter >= self.total:
+                pbar.close()
+                return
+
 
 # initialize logger
 logger.add('tokenizer_errors_{time}.log', delay=True,
@@ -198,89 +283,96 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
 
 
 @deco(num_returns=1)
-def process_midi(midi_path, classes=None, minlength=16, debug=False):
+def process_midi(midi_path, pba: ActorHandle, classes=None, minlength=16, debug=False):
+    midi_doc = None
+    midi = None
+
     try:
         midi = MidiFile(midi_path)
     except:
-        return None
+        pass
 
-    if (midi.max_tick/midi.ticks_per_beat) < minlength:
-        return None
+    if midi != None \
+            and not (
+                (midi.max_tick/midi.ticks_per_beat) < minlength
+                and
+                midi.ticks_per_beat < max(BEAT_RES.values()) * 4
+            ):
+        programs = get_midi_programs(midi)
 
-    if midi.ticks_per_beat < max(BEAT_RES.values()) * 4:
-        return None
+        # remove unwanted tracks
+        programs_to_delete = []
 
-    programs = get_midi_programs(midi)
+        if classes is None:
+            for ic in CLASS_EFFECTS:
+                programs_to_delete += list(
+                    INSTRUMENT_CLASSES[ic]['program_range'])
+        else:
+            classes = classes.strip().split(',')
+            classes = [int(c.strip()) for c in classes]
+            programs_to_delete = get_programs_from_classes(classes)
 
-    # remove unwanted tracks
-    programs_to_delete = []
+        keep_programs = filter_programs(programs_to_delete)
 
-    if classes is None:
-        for ic in CLASS_EFFECTS:
-            programs_to_delete += list(
-                INSTRUMENT_CLASSES[ic]['program_range'])
-    else:
-        classes = classes.strip().split(',')
-        classes = [int(c.strip()) for c in classes]
-        programs_to_delete = get_programs_from_classes(classes)
+        # remove unwanted tracks
+        merge_tracks_per_class(midi, valid_programs=keep_programs)
 
-    keep_programs = filter_programs(programs_to_delete)
+        # discard empty songs
+        if len(midi.instruments) >= 1:
+            if classes is None:
+                # merge percussion/drums
+                merge_tracks_per_class(midi, CLASSES_PERCUSSION)
 
-    # remove unwanted tracks
-    merge_tracks_per_class(midi, valid_programs=keep_programs)
+                # merge synths
+                merge_tracks_per_class(midi, CLASSES_SYNTHS)
 
-    # discard empty songs
-    if len(midi.instruments) < 1:
-        return None
+                # merge strings
+                merge_tracks_per_class(midi, CLASSES_STRINGS)
 
-    if classes is None:
-        # merge percussion/drums
-        merge_tracks_per_class(midi, CLASSES_PERCUSSION)
+                # merge guitar & bass
+                merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
 
-        # merge synths
-        merge_tracks_per_class(midi, CLASSES_SYNTHS)
+            merge_same_program_tracks(midi.instruments)
 
-        # merge strings
-        merge_tracks_per_class(midi, CLASSES_STRINGS)
+            midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
+                               str.lower(os.path.basename(midi_path)))
 
-        # merge guitar & bass
-        merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
+            programs = get_midi_programs(midi)
 
-    merge_same_program_tracks(midi.instruments)
+            midi_doc = {
+                'programs': programs,
+                'path': midi_path,
+                'name': midi_name
+            }
 
-    midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
-                       str.lower(os.path.basename(midi_path)))
-
-    programs = get_midi_programs(midi)
-
-    midi_doc = {
-        'programs': programs,
-        'path': midi_path,
-        'name': midi_name
-    }
+    pba.update.remote(1)
 
     return midi_doc
 
 
 @deco
-def tokenize_set(midi_doc, tokens_path, tokenizer, bpe=False, debug=False):
+def tokenize_set(midi_doc, tokens_path, tokenizer, pba: ActorHandle, bpe=False, debug=False):
     midi = None
+    tokens_cfg = None
 
     try:
         midi = MidiFile(midi_doc['path'])
     except:
-        return None
+        pass
 
-    tokens_cfg = f"{tokens_path}/{midi_doc['name']}.json"
-    programs = midi_doc['programs']
+    if midi != None:
+        tokens_cfg = f"{tokens_path}/{midi_doc['name']}.json"
+        programs = midi_doc['programs']
 
-    try:
-        tokens = tokenizer.midi_to_tokens(midi, apply_bpe_if_possible=bpe)
-        tokenizer.save_tokens(tokens, tokens_cfg, programs=programs)
-    except Exception as error:
-        return None
-    finally:
-        del midi
+        try:
+            tokens = tokenizer.midi_to_tokens(midi, apply_bpe_if_possible=bpe)
+            tokenizer.save_tokens(tokens, tokens_cfg, programs=programs)
+        except Exception as error:
+            tokens_cfg = None
+        finally:
+            del midi
+
+    pba.update.remote(1)
 
     return tokens_cfg
 
@@ -298,9 +390,13 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlengt
         'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
 
     # process MIDIs via Ray
+    pb = ProgressBar(len(midi_file_paths))
+    actor = pb.actor
     process_call = process_midi.remote if not debug else process_midi
-    ray_refs = [process_call(midi_path, classes, minlength, debug)
+    ray_refs = [process_call(midi_path, actor, classes=classes, minlength=minlength, debug=debug)
                 for midi_path in midi_file_paths]
+
+    pb.print_until_done()
 
     return [ref for ref in ray_refs if ref != None]
 
@@ -343,9 +439,13 @@ if __name__ == "__main__":
         TOKENIZER = get_tokenizer(programs=programs_used)
 
         # process tokenization via Ray
+        pb = ProgressBar(len(MIDI_COLLECTION_REFS))
+        actor = pb.actor
         tokenize_call = tokenize_set if args.debug else tokenize_set.remote
-        ray_tokenized_refs = [tokenize_call(ray_midi_ref, args.tokens_path, TOKENIZER, args.bpe, args.debug)
-                              for ray_midi_ref in MIDI_COLLECTION_REFS]
+        ray_tokenized_refs = [tokenize_call(ray_midi_ref, args.tokens_path, TOKENIZER,
+                                            actor, bpe=args.bpe, debug=args.debug) for ray_midi_ref in MIDI_COLLECTION_REFS]
+        pb.print_until_done()
+
         token_files_paths = [ray.get(ray_t_ref)
                              for ray_t_ref in ray_tokenized_refs if ray_t_ref != None]
 
