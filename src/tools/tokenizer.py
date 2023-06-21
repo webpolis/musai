@@ -450,7 +450,7 @@ if __name__ == "__main__":
         token_files_paths = [ray.get(ray_t_ref)
                              for ray_t_ref in ray_tokenized_refs if ray_t_ref != None]
 
-        logger.info('Vocab size (no BPE): {vocab_size}',
+        logger.info('Vocab size (base): {vocab_size}',
                     vocab_size=len(TOKENIZER.vocab))
         logger.info('Saving params...')
 
@@ -471,7 +471,7 @@ if __name__ == "__main__":
             TOKENIZER = get_tokenizer(params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
 
         logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
-            TOKENIZER.vocab))
+            TOKENIZER))
 
         TOKENIZER.learn_bpe(
             vocab_size=int(len(TOKENIZER.vocab)*1.25),
@@ -486,7 +486,7 @@ if __name__ == "__main__":
         TOKENIZER.save_params(f'{tokens_bpe_path}/{TOKEN_PARAMS_NAME}')
 
         logger.info('Vocab size (BPE): {vocab_size}',
-                    vocab_size=len(TOKENIZER.vocab))
+                    vocab_size=len(TOKENIZER))
 
     if args.semantical:
         logger.info('Semantical processing: {collection_size} documents', collection_size=len(
