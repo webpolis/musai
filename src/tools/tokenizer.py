@@ -407,26 +407,26 @@ if __name__ == "__main__":
     MIDI_TITLES = []
     MIDI_PROGRAMS = []
 
-    if not args.debug:
-        # starts orchestration
-        ray.init(num_cpus=psutil.cpu_count())
-
-        MIDI_COLLECTION_REFS = get_collection_refs(
-            args.midis_path, args.midis_glob, args.classes, args.length)
-
-        for ray_midi_ref in MIDI_COLLECTION_REFS:
-            midi_doc = ray.get(ray_midi_ref)
-
-            if midi_doc != None:
-                MIDI_TITLES.append(midi_doc['name'])
-                MIDI_PROGRAMS.append(midi_doc['programs'])
-    else:
-        MIDI_COLLECTION_REFS = get_collection_refs(
-            args.midis_path, args.midis_glob, args.classes, args.length, args.debug)
-        MIDI_TITLES = [midi_ref['name'] for midi_ref in MIDI_COLLECTION_REFS]
-        MIDI_PROGRAMS = [midi_ref['programs'] for midi_ref in MIDI_COLLECTION_REFS]
-
     if args.process:
+        if not args.debug:
+            # starts orchestration
+            ray.init(num_cpus=psutil.cpu_count())
+
+            MIDI_COLLECTION_REFS = get_collection_refs(
+                args.midis_path, args.midis_glob, args.classes, args.length)
+
+            for ray_midi_ref in MIDI_COLLECTION_REFS:
+                midi_doc = ray.get(ray_midi_ref)
+
+                if midi_doc != None:
+                    MIDI_TITLES.append(midi_doc['name'])
+                    MIDI_PROGRAMS.append(midi_doc['programs'])
+        else:
+            MIDI_COLLECTION_REFS = get_collection_refs(
+                args.midis_path, args.midis_glob, args.classes, args.length, args.debug)
+            MIDI_TITLES = [midi_ref['name'] for midi_ref in MIDI_COLLECTION_REFS]
+            MIDI_PROGRAMS = [midi_ref['programs'] for midi_ref in MIDI_COLLECTION_REFS]
+
         logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
             MIDI_COLLECTION_REFS))
 
@@ -461,6 +461,7 @@ if __name__ == "__main__":
 
     if args.bpe:
         # Constructs the vocabulary with BPE, from the tokenized files
+        token_files_paths = list(Path(args.tokens_path).glob('*.json'))
         tokens_bpe_path = f'{args.tokens_path}/bpe'
 
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
