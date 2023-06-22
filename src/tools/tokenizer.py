@@ -447,8 +447,7 @@ if __name__ == "__main__":
                                             actor, bpe=args.bpe, debug=args.debug) for ray_midi_ref in MIDI_COLLECTION_REFS]
         pb.print_until_done()
 
-        token_files_paths = [ray.get(ray_t_ref)
-                             for ray_t_ref in ray_tokenized_refs if ray_t_ref != None]
+        ray.shutdown()
 
         logger.info('Vocab size (base): {vocab_size}',
                     vocab_size=len(TOKENIZER.vocab))
@@ -465,8 +464,6 @@ if __name__ == "__main__":
         tokens_bpe_path = f'{args.tokens_path}/bpe'
 
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
-
-        ray.shutdown()
 
         if not args.process:
             TOKENIZER = get_tokenizer(params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
