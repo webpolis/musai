@@ -323,7 +323,7 @@ if __name__ == "__main__":
             'real_bsz':  args.batches_num,
             'strategy': 'ddp_find_unused_parameters_false',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
-            'tiny_att_layer': -1 if not args.attention else int(args.n_layer) - 1,
+            'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
             'vocab_size': len(TOKENIZER),
             'wandb': 'musai',
             'warmup_steps': 10,
