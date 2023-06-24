@@ -8,7 +8,9 @@ This file is part of MusAI, a project for generating MIDI music using
 a combination of machine learning algorithms.
 
 Below is a monolitic script that constructs a corpora of MIDI tokens ready to be injected 
-into the model. Semantical processing, cleanup and sanitization happens here.
+into the model. Semantical processing, cleanup and sanitization happens here. You can 
+optionally choose to process MIDIs which use a set of instrument classes and/or extract 
+a specific set of classes from the songs.
 It uses Ray for parallel processing.
 
 MIT License
