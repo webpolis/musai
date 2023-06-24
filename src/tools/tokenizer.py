@@ -302,21 +302,21 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
                 midi.ticks_per_beat < max(BEAT_RES.values()) * 4
             ):
         programs = get_midi_programs(midi)
+        midi_programs = list(set([p[0] for p in programs]))
+        drum_programs = list(set([p[0] for p in programs if p[1] == True]))
 
         # check if midi has at least one program from each required class
         meets_req = True
 
         if classes_req != None:
-            midi_programs = [p[0] for p in programs]
-            drum_programs = [p[0] for p in programs if p[1] == True]
             classes_req = classes_req.strip().split(',')
             classes_req = [int(c.strip()) for c in classes_req]
 
             for ic in classes_req:
                 class_programs = list(INSTRUMENT_CLASSES[ic]['program_range'])
                 intersect = list(set(midi_programs) & set(class_programs))
-                meets_req = meets_req and len(intersect) > 0 \
-                    or (ic in drum_programs and 16 in classes_req)
+                meets_req = (ic == 16 and len(drum_programs) > 0) \
+                    or meets_req and len(intersect) > 0
 
                 if not meets_req:
                     break
@@ -335,6 +335,11 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
                 programs_to_delete = get_other_programs(classes)
 
             keep_programs = filter_programs(programs_to_delete)
+
+            # some drum tracks use non-standard programs
+            if classes != None and 16 in classes \
+                    and len(drum_programs) > 0:
+                keep_programs = list(set(keep_programs + drum_programs))
 
             # remove unwanted tracks
             merge_tracks_per_class(midi, valid_programs=keep_programs)
