@@ -194,7 +194,7 @@ if __name__ == "__main__":
     args = arg_parser.parse_args()
 
     # callback handlers via Ray or not
-    deco = ray.remote if not args.debug else deco
+    deco = ray.remote(num_cpus=0.5) if not args.debug else deco
 
 # define some functions
 
