@@ -7,7 +7,7 @@ Email: nfiglesias@gmail.com
 This file is part of MusAI, a project for generating MIDI music using 
 a combination of machine learning algorithms.
 
-Below is a monolitic script that constructs a corpora of tokens ready to be injected 
+Below is a monolitic script that constructs a corpora of MIDI tokens ready to be injected 
 into the model. Semantical processing, cleanup and sanitization happens here.
 It uses Ray for parallel processing.
 
@@ -179,11 +179,11 @@ if __name__ == "__main__":
                             action='store_true', default=False)
     arg_parser.add_argument('-p', '--process', help='Extracts tokens from the MIDI files',
                             action='store_true', default=False)
-    arg_parser.add_argument('-s', '--semantical', help='Analyze corpora and process semantical grouping',
-                            action='store_true', default=False)
     arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
                             choices=TOKENIZER_ALGOS, default='MMM', type=str)
     arg_parser.add_argument('-c', '--classes', help='Only extract this instruments classes (e.g. 1,14,16)',
+                            default=None, type=str)
+    arg_parser.add_argument('-r', '--classes_req', help='Minimum set of instruments classes required (e.g. 1,14,16)',
                             default=None, type=str)
     arg_parser.add_argument('-l', '--length', help='Minimum sequence length (in beats)',
                             default=16, type=int)
@@ -226,7 +226,7 @@ def filter_programs(skip_programs):
     return keep_programs
 
 
-def get_programs_from_classes(classes):
+def get_other_programs(classes):
     programs = []
 
     for i in range(0, len(INSTRUMENT_CLASSES)):
@@ -284,13 +284,13 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
 
 
 @deco
-def process_midi(midi_path, pba: ActorHandle, classes=None, minlength=16, debug=False):
+def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, minlength=16, debug=False):
     midi_doc = None
     midi = None
 
     try:
         midi = MidiFile(midi_path)
-    except:
+    except Exception as err:
         pass
 
     if midi != None \
@@ -301,52 +301,73 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, minlength=16, debug=
             ):
         programs = get_midi_programs(midi)
 
-        # remove unwanted tracks
-        programs_to_delete = []
+        # check if midi has at least one program from each required class
+        meets_req = True
 
-        if classes is None:
-            for ic in CLASS_EFFECTS:
-                programs_to_delete += list(
-                    INSTRUMENT_CLASSES[ic]['program_range'])
-        else:
-            classes = classes.strip().split(',')
-            classes = [int(c.strip()) for c in classes]
-            programs_to_delete = get_programs_from_classes(classes)
+        if classes_req != None:
+            midi_programs = [p[0] for p in programs]
+            drum_programs = [p[0] for p in programs if p[1] == True]
+            classes_req = classes_req.strip().split(',')
+            classes_req = [int(c.strip()) for c in classes_req]
 
-        keep_programs = filter_programs(programs_to_delete)
+            for ic in classes_req:
+                class_programs = list(INSTRUMENT_CLASSES[ic]['program_range'])
+                intersect = list(set(midi_programs) & set(class_programs))
+                meets_req = meets_req and len(intersect) > 0 \
+                    or (ic in drum_programs and 16 in classes_req)
 
-        # remove unwanted tracks
-        merge_tracks_per_class(midi, valid_programs=keep_programs)
+                if not meets_req:
+                    break
 
-        # discard empty songs
-        if len(midi.instruments) >= 1:
+        if meets_req:
+            # remove unwanted tracks
+            programs_to_delete = []
+
             if classes is None:
-                # merge percussion/drums
-                merge_tracks_per_class(midi, CLASSES_PERCUSSION)
+                for ic in CLASS_EFFECTS:
+                    programs_to_delete += list(
+                        INSTRUMENT_CLASSES[ic]['program_range'])
+            else:
+                classes = classes.strip().split(',')
+                classes = [int(c.strip()) for c in classes]
+                programs_to_delete = get_other_programs(classes)
 
-                # merge synths
-                merge_tracks_per_class(midi, CLASSES_SYNTHS)
+            keep_programs = filter_programs(programs_to_delete)
 
-                # merge strings
-                merge_tracks_per_class(midi, CLASSES_STRINGS)
+            # remove unwanted tracks
+            merge_tracks_per_class(midi, valid_programs=keep_programs)
 
-                # merge guitar & bass
-                merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
+            # discard empty songs
+            if len(midi.instruments) >= 1:
+                if classes is None:
+                    # merge percussion/drums
+                    merge_tracks_per_class(midi, CLASSES_PERCUSSION)
 
-            merge_same_program_tracks(midi.instruments)
+                    # merge synths
+                    merge_tracks_per_class(midi, CLASSES_SYNTHS)
 
-            midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
-                               str.lower(os.path.basename(midi_path)))
+                    # merge strings
+                    merge_tracks_per_class(midi, CLASSES_STRINGS)
 
-            programs = get_midi_programs(midi)
+                    # merge guitar & bass
+                    merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
 
-            midi_doc = {
-                'programs': programs,
-                'path': midi_path,
-                'name': midi_name
-            }
+                # merge_same_program_tracks(midi.instruments)
 
-    pba.update.remote(1)
+                midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
+                                   str.lower(os.path.basename(midi_path)))
+
+                programs = list(set([program[0]
+                                for program in get_midi_programs(midi)]))
+
+                midi_doc = {
+                    'programs': programs,
+                    'path': midi_path,
+                    'name': midi_name
+                }
+
+    if pba != None:
+        pba.update.remote(1)
 
     return midi_doc
 
@@ -366,6 +387,9 @@ def tokenize_set(midi_doc, tokens_path, tokenizer, pba: ActorHandle, bpe=False, 
         programs = midi_doc['programs']
 
         try:
+            # remove unwanted tracks
+            merge_tracks_per_class(midi, valid_programs=programs)
+
             tokens = tokenizer.midi_to_tokens(midi, apply_bpe_if_possible=bpe)
             tokenizer.save_tokens(tokens, tokens_cfg, programs=programs)
         except Exception as error:
@@ -373,12 +397,13 @@ def tokenize_set(midi_doc, tokens_path, tokenizer, pba: ActorHandle, bpe=False, 
         finally:
             del midi
 
-    pba.update.remote(1)
+    if not debug:
+        pba.update.remote(1)
 
     return tokens_cfg
 
 
-def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlength=16, debug=False):
+def get_collection_refs(midis_path=None, midis_glob=None, classes=None, classes_req=None, minlength=16, debug=False):
     """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
 
     :return: A dictionary containing a set of {'programs': ..., 'path': ..., 'name': ...} 
@@ -391,13 +416,19 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, minlengt
         'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
 
     # process MIDIs via Ray
-    pb = ProgressBar(len(midi_file_paths))
-    actor = pb.actor
+    if not debug:
+        pb = ProgressBar(len(midi_file_paths))
+        actor = pb.actor
+    else:
+        actor = None
+        midi_file_paths = tqdm(midi_file_paths)
+
     process_call = process_midi.remote if not debug else process_midi
-    ray_refs = [process_call(midi_path, actor, classes=classes, minlength=minlength, debug=debug)
+    ray_refs = [process_call(midi_path, actor, classes=classes, classes_req=classes_req, minlength=minlength, debug=debug)
                 for midi_path in midi_file_paths]
 
-    pb.print_until_done()
+    if not debug:
+        pb.print_until_done()
 
     return [ref for ref in ray_refs if ref != None]
 
@@ -413,7 +444,7 @@ if __name__ == "__main__":
             ray.init(num_cpus=psutil.cpu_count())
 
             MIDI_COLLECTION_REFS = get_collection_refs(
-                args.midis_path, args.midis_glob, args.classes, args.length)
+                args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length)
 
             for ray_midi_ref in MIDI_COLLECTION_REFS:
                 midi_doc = ray.get(ray_midi_ref)
@@ -423,7 +454,7 @@ if __name__ == "__main__":
                     MIDI_PROGRAMS.append(midi_doc['programs'])
         else:
             MIDI_COLLECTION_REFS = get_collection_refs(
-                args.midis_path, args.midis_glob, args.classes, args.length, args.debug)
+                args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length, args.debug)
             MIDI_TITLES = [midi_ref['name'] for midi_ref in MIDI_COLLECTION_REFS]
             MIDI_PROGRAMS = [midi_ref['programs'] for midi_ref in MIDI_COLLECTION_REFS]
 
@@ -433,21 +464,28 @@ if __name__ == "__main__":
         Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
 
         # collect used programs
-        programs_used = [program[0]
-                         for program in list(set(reduce(iconcat, MIDI_PROGRAMS, [])))]
+        programs_used = [program for program in list(
+            set(reduce(iconcat, MIDI_PROGRAMS, [])))]
 
         # initializes tokenizer
         TOKENIZER = get_tokenizer(programs=programs_used)
 
         # process tokenization via Ray
-        pb = ProgressBar(len(MIDI_COLLECTION_REFS))
-        actor = pb.actor
+        if not args.debug:
+            pb = ProgressBar(len(MIDI_COLLECTION_REFS))
+            actor = pb.actor
+            midi_collection_refs = MIDI_COLLECTION_REFS
+        else:
+            actor = None
+            midi_collection_refs = tqdm(MIDI_COLLECTION_REFS)
+
         tokenize_call = tokenize_set if args.debug else tokenize_set.remote
         ray_tokenized_refs = [tokenize_call(ray_midi_ref, args.tokens_path, TOKENIZER,
-                                            actor, bpe=args.bpe, debug=args.debug) for ray_midi_ref in MIDI_COLLECTION_REFS]
-        pb.print_until_done()
+                                            actor, bpe=args.bpe, debug=args.debug) for ray_midi_ref in midi_collection_refs]
 
-        ray.shutdown()
+        if not args.debug:
+            pb.print_until_done()
+            ray.shutdown()
 
         logger.info('Vocab size (base): {vocab_size}',
                     vocab_size=len(TOKENIZER.vocab))
@@ -485,20 +523,5 @@ if __name__ == "__main__":
 
         logger.info('Vocab size (BPE): {vocab_size}',
                     vocab_size=len(TOKENIZER))
-
-    if args.semantical:
-        logger.info('Semantical processing: {collection_size} documents', collection_size=len(
-            MIDI_COLLECTION_REFS.items()))
-
-        token_files_paths = [
-            f'{args.tokens_path}/{midi_name}.json' for midi_name in MIDI_TITLES]
-
-        for token_file in tqdm(token_files_paths):
-            try:
-                tokens = json.load(open(token_file, 'r'))['ids']
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                logger.error(e)
 
     ray.shutdown()
