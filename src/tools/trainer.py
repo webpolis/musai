@@ -87,7 +87,12 @@ def save_pth(dd, ff):
     torch.save(dd, ff)
 
 
-class train_callback(Callback):
+class ResetValDataloader(Callback):
+    def on_validation_start(self, trainer, pl_module):
+        trainer.reset_val_dataloader(pl_module)
+
+
+class TrainCallback(Callback):
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -355,7 +360,7 @@ if __name__ == "__main__":
             'strategy': 'auto',
             'enable_checkpointing': True,
             'precision': '16',
-            'callbacks': [train_callback(params_obj)],
+            'callbacks': [TrainCallback(params_obj)],
         }
         trainer_pl = pl.Trainer(**trainer_params)
 
