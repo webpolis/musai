@@ -265,6 +265,9 @@ class Block(nn.Module):
         self.ln1 = nn.LayerNorm(args.n_embd)
         self.ln2 = nn.LayerNorm(args.n_embd)
 
+        if hasattr(args, 'dropout_p'):
+            self.dropout = nn.Dropout(p=args.dropout_p)
+
         if self.layer_id == 0:
             self.ln0 = nn.LayerNorm(args.n_embd)
             if args.my_pos_emb > 0:
@@ -290,7 +293,9 @@ class Block(nn.Module):
 
     def forward(self, x, x_emb=None):
         args = self.args
+        has_dropout = hasattr(args, 'dropout_p')
         B, T, C = x.size()
+
         if self.layer_id == 0:
             x = self.ln0(x)
             if args.my_pos_emb > 0:
@@ -301,8 +306,11 @@ class Block(nn.Module):
         if self.layer_id == 0 and args.pre_ffn > 0:
             x = x + self.ffnPre(self.ln1(x))
         else:
-            x = x + self.att(self.ln1(x))
-        x = x + self.ffn(self.ln2(x))
+            x = x + self.att(self.ln1(x)) if not has_dropout else \
+                x + self.dropout(self.att(self.ln1(x)))
+
+        x = x + self.ffn(self.ln2(x)) if not has_dropout else \
+            x + self.dropout(self.ffn(self.ln2(x)))
 
         if args.tiny_att_dim > 0 and self.layer_id == args.tiny_att_layer:
             xx = self.tiny_ln(x)
@@ -351,10 +359,6 @@ class RWKV(pl.LightningModule):
                                     for i in range(args.n_layer)])
 
         self.ln_out = nn.LayerNorm(args.n_embd)
-
-        if hasattr(args, 'dropout_p'):
-            self.dropout = nn.Dropout(p=args.dropout_p)
-
         self.head = nn.Linear(args.n_embd, args.vocab_size, bias=False)
 
         if args.head_qk > 0:
@@ -437,7 +441,6 @@ class RWKV(pl.LightningModule):
 
         x = self.emb(idx)
         x_emb = x
-        has_dropout = hasattr(args, 'dropout_p')
 
         if args.tiny_att_dim > 0:
             for bb, block in enumerate(self.blocks):
@@ -445,20 +448,12 @@ class RWKV(pl.LightningModule):
                     x = deepspeed.checkpointing.checkpoint(block, x, x_emb)
                 else:
                     x = block(x, x_emb)
-
-                # apply dropout in the middle
-                if has_dropout and bb == ((len(self.blocks)/2)-1):
-                    x = self.dropout(x)
         else:
             for bb, block in enumerate(self.blocks):
                 if args.grad_cp == 1:
                     x = deepspeed.checkpointing.checkpoint(block, x)
                 else:
                     x = block(x)
-
-                # apply dropout in the middle
-                if has_dropout and bb == ((len(self.blocks)/2)-1):
-                    x = self.dropout(x)
 
         x = self.ln_out(x)
 
