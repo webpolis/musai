@@ -248,7 +248,7 @@ class TrainCallback(Callback):
                     (trainer.current_epoch == args.epoch_count - 1):
                 to_save_dict = pl_module.state_dict()
 
-                if hasattr(self.args, 'lora_params'):
+                if hasattr(args, 'lora') and args.lora and hasattr(args, 'lora_params'):
                     enable_time_finetune = 'time' in self.args.lora_params['parts']
                     enable_ln_finetune = 'ln' in self.args.lora_params['parts']
                     lora_dict = {}
