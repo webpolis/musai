@@ -87,6 +87,9 @@ def make_linear_ffn(*args, **kwargs):
     if "ffn" in kwargs['lora_params']['parts'] and kwargs['lora_params']['r'] > 0:
         return LoraLinear(*args, **kwargs)
     else:
+        if 'lora_params' in kwargs:
+            del kwargs['lora_params']
+
         return nn.Linear(*args, **kwargs)
 
 

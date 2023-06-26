@@ -429,19 +429,20 @@ if __name__ == "__main__":
                             param.requires_grad = True
 
         # Checkpoint preload
-        if params_obj.base_model != None and os.path.isfile(params_obj.base_model):
+        if args.base_model != None and os.path.isfile(args.base_model):
             try:
-                logger.info(f'Preloading {params_obj.base_model}')
-                load_dict = torch.load(params_obj.base_model, map_location="cpu")
+                logger.info(f'Preloading {args.base_model}')
+                load_dict = torch.load(args.base_model, map_location="cpu")
 
                 # If using LoRA, the LoRA keys might be missing in the original model
-                model_base.load_state_dict(load_dict, strict=(not params_obj.lora))
+                model_base.load_state_dict(load_dict, strict=(not args.lora))
 
-                if params_obj.lora and os.path.isfile(params_obj.lora_ckpt):
-                    logger.info(f'Preloading LoRa checkpoint {params_obj.lora_ckpt}')
+                if args.lora and args.lora_ckpt != None \
+                        and os.path.isfile(args.lora_ckpt):
+                    logger.info(f'Preloading LoRa checkpoint {args.lora_ckpt}')
 
                     model_base.load_state_dict(torch.load(
-                        params_obj.lora_ckpt, map_location="cpu"), strict=False)
+                        args.lora_ckpt, map_location="cpu"), strict=False)
             except Exception as error:
                 logger.error(error)
 
