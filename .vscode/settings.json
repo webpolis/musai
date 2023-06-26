@@ -76,4 +76,7 @@
         "variant": "cpp",
         "strstream": "cpp"
     },
+    "prettier": {
+        "printWidth": 80
+    }
 }

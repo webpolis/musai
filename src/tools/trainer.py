@@ -7,15 +7,23 @@ Email: nfiglesias@gmail.com
 This file is part of MusAI, a project for generating MIDI music using
 a combination of machine learning algorithms.
 
-This training script is designed to train a model with various configurable options. It utilizes command-line arguments to provide flexibility and control over the training process. Here is a general overview of the script's capabilities:
+This training script is designed to train a model with various configurable options.
+It utilizes command-line arguments to provide flexibility and control over the training
+process. Here is a general overview of the script's capabilities:
 
-Token Parameters: The script allows specifying the path to the token parameters saved by the tokenizer. This is done using the -t or --tokens_path argument.
+Token Parameters: The script allows specifying the path to the token parameters saved by
+the tokenizer. This is done using the -t or --tokens_path argument.
 
-Output Path: The trained model binaries can be saved to a specified output path. The default output path is set to 'out', but it can be customized using the -o or --output_path argument.
+Output Path: The trained model binaries can be saved to a specified output path.
+The default output path is set to 'out', but it can be customized using the -o or
+--output_path argument.
 
-Base Model/Checkpoint: The script supports specifying the full path for the base model or checkpoint using the -m or --base_model argument. This allows you to start training from a pre-existing model.
+Base Model/Checkpoint: The script supports specifying the full path for the base model or
+checkpoint using the -m or --base_model argument. This allows you to start training from
+a pre-existing model.
 
-LoRa Checkpoint: It is possible to provide the full path for the LoRa checkpoint using the -r or --lora_ckpt argument.
+LoRa Checkpoint: It is possible to provide the full path for the LoRa checkpoint using the
+-r or --lora_ckpt argument.
 
 Training Configuration:
 
