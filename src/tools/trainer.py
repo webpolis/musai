@@ -180,17 +180,20 @@ class TrainCallback(Callback):
                 trainer.my_log.flush()
 
                 if len(args.wandb) > 0:
-                    logger.info("Login to wandb...")
-                    import wandb
+                    try:
+                        logger.info("Login to wandb...")
+                        import wandb
 
-                    wandb.init(
-                        project=args.wandb,
-                        name=str(args.vocab_size) + "_" +
-                        str(args.n_layer) + "_" + args.my_timestamp,
-                        config=args._asdict(),
-                        save_code=False,
-                    )
-                    trainer.my_wandb = wandb
+                        wandb.init(
+                            project=args.wandb,
+                            name=str(args.vocab_size) + "_" +
+                            str(args.n_layer) + "_" + args.my_timestamp,
+                            config=args._asdict(),
+                            save_code=False,
+                        )
+                        trainer.my_wandb = wandb
+                    except Exception as error:
+                        logger.error(error)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         args = self.args
