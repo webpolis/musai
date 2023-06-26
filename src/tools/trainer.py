@@ -306,7 +306,7 @@ if __name__ == "__main__":
         '-d', '--lr_decay', default=str(LR_DECAY), help='Learning rate decay thru steps', type=str)
     arg_parser.add_argument('-a', '--attention', help='Enable tiny attention',
                             action='store_true', default=False)
-    arg_parser.add_argument('-l', '--lora', help='Activate LoRa',
+    arg_parser.add_argument('-l', '--lora', help='Activate LoRa (Low-Rank Adaptation)',
                             action='store_true', default=False)
     arg_parser.add_argument('-g', '--grad_cp', help='Gradient checkpointing',
                             action='store_true', default=False)
