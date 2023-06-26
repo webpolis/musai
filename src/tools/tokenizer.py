@@ -183,7 +183,7 @@ if __name__ == "__main__":
                             action='store_true', default=False)
     arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
                             choices=TOKENIZER_ALGOS, default='MMM', type=str)
-    arg_parser.add_argument('-c', '--classes', help='Only extract this instruments classes (e.g. 1,14,16)',
+    arg_parser.add_argument('-c', '--classes', help='Only extract this instruments classes (e.g. 1,14,16,3,4,10,11)',
                             default=None, type=str)
     arg_parser.add_argument('-r', '--classes_req', help='Minimum set of instruments classes required (e.g. 1,14,16)',
                             default=None, type=str)
