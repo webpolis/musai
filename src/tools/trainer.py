@@ -4,12 +4,35 @@ MusAI
 Author: Nicolás Iglesias
 Email: nfiglesias@gmail.com
 
-This file is part of MusAI, a project for generating MIDI music using 
+This file is part of MusAI, a project for generating MIDI music using
 a combination of machine learning algorithms.
 
-Below is a monolitic script that performs the training over an already 
-generated dataset of tokens (via the tokenizer.py script) and saves the 
-model in a defined output directory.
+This training script is designed to train a model with various configurable options. It utilizes command-line arguments to provide flexibility and control over the training process. Here is a general overview of the script's capabilities:
+
+Token Parameters: The script allows specifying the path to the token parameters saved by the tokenizer. This is done using the -t or --tokens_path argument.
+
+Output Path: The trained model binaries can be saved to a specified output path. The default output path is set to 'out', but it can be customized using the -o or --output_path argument.
+
+Base Model/Checkpoint: The script supports specifying the full path for the base model or checkpoint using the -m or --base_model argument. This allows you to start training from a pre-existing model.
+
+LoRa Checkpoint: It is possible to provide the full path for the LoRa checkpoint using the -r or --lora_ckpt argument.
+
+Training Configuration:
+
+Context Length (-c or --ctx_len): Specifies the length of the context.
+Number of Batches (-b or --batches_num): Defines the number of batches.
+Embeddings Dimension (-e or --embed_num): Sets the size of the embeddings dimension.
+Number of Block Layers (-n or --layers_num): Determines the number of block layers.
+Number of Epochs (-p or --epochs_num): Specifies the total number of training epochs.
+Steps per Epoch (-s or --steps_num): Defines the number of steps per epoch.
+Learning Rate (-i or --lr_rate): Sets the learning rate. Init/Final LR derivates from it.
+Learning Rate Decay (-d or --lr_decay): Specifies the learning rate decay through steps.
+
+Additional Features:
+
+Tiny Attention (-a or --attention): Enables the tiny attention feature.
+LoRa Activation (-l or --lora): Activates LoRa (Low-Rank Adaptation).
+Gradient Checkpointing (-g or --grad_cp): Enables gradient checkpointing.
 
 MIT License
 Copyright (c) [2023] [Nicolás Iglesias]
@@ -232,8 +255,8 @@ class TrainCallback(Callback):
                         to_save_dict,
                         f"{args.proj_dir}/rwkv-{args.epoch_begin + trainer.current_epoch}.pth",
                     )
-                except Exception as e:
-                    logger.info('Error\n\n', e, '\n\n')
+                except Exception as error:
+                    logger.error(error)
 
             trainer.my_log.write(
                 f"{args.epoch_begin + trainer.current_epoch} {trainer.my_epoch_loss:.6f} {math.exp(trainer.my_epoch_loss):.4f} {trainer.my_lr:.8f} {datetime.datetime.now()} {trainer.current_epoch}\n")
@@ -292,7 +315,7 @@ if __name__ == "__main__":
             '!!!!! LoRA Warning: Gradient Checkpointing requires JIT off, disabling it')
         os.environ["RWKV_JIT_ON"] = "0"
 
-    from model import RWKV, LORA_CONFIG, LoraLinear
+    from model import RWKV, LORA_CONFIG
 
     try:
         # seed
