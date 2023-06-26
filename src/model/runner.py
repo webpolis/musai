@@ -41,6 +41,40 @@ class RWKV_RNN(BaseModule):
         with torch.no_grad():
             w = torch.load(args.base_model + '.pth',
                            map_location=args.map_location)
+
+            if hasattr(self.args, 'lora'):
+                # merge LoRA-only slim checkpoint into the main weights
+                w_lora = torch.load(args.MODEL_LORA + '.pth', map_location='cpu')
+
+                for k in w_lora.keys():
+                    w[k] = w_lora[k]
+
+                # merge LoRA weights
+                keys = set(w.keys())
+
+                for k in keys:
+                    k: str
+                    if k.endswith('.weight'):
+                        prefix = k[:-len('.weight')]
+                        lora_A = prefix + '.lora_A'
+                        lora_B = prefix + '.lora_B'
+
+                        if lora_A in keys:
+                            assert lora_B in keys
+                            print(f'merging {lora_A} and {lora_B} into {k}')
+                            assert w[lora_B].shape[1] == w[lora_A].shape[0] == args.lora_r
+
+                            # merging needs matmul, which is slow on cpu; work on gpu if possible
+                            if args.RUN_DEVICE == 'cuda':
+                                w[k] = w[k].cuda()
+                                w[lora_A] = w[lora_A].cuda()
+                                w[lora_B] = w[lora_B].cuda()
+                            w[k] += w[lora_B] @ w[lora_A] * \
+                                (args.lora_alpha / args.lora_r)
+
+                            del w[lora_A]
+                            del w[lora_B]
+
             # refine weights and send to correct device
             keys = list(w.keys())
             if 'pos_emb_x' in keys:
