@@ -4,12 +4,35 @@ MusAI
 Author: Nicolás Iglesias
 Email: nfiglesias@gmail.com
 
-This file is part of MusAI, a project for generating MIDI music using 
+This file is part of MusAI, a project for generating MIDI music using
 a combination of machine learning algorithms.
 
-Below is a monolitic script that performs the training over an already 
-generated dataset of tokens (via the tokenizer.py script) and saves the 
-model in a defined output directory.
+This training script is designed to train a model with various configurable options. It utilizes command-line arguments to provide flexibility and control over the training process. Here is a general overview of the script's capabilities:
+
+Token Parameters: The script allows specifying the path to the token parameters saved by the tokenizer. This is done using the -t or --tokens_path argument.
+
+Output Path: The trained model binaries can be saved to a specified output path. The default output path is set to 'out', but it can be customized using the -o or --output_path argument.
+
+Base Model/Checkpoint: The script supports specifying the full path for the base model or checkpoint using the -m or --base_model argument. This allows you to start training from a pre-existing model.
+
+LoRa Checkpoint: It is possible to provide the full path for the LoRa checkpoint using the -r or --lora_ckpt argument.
+
+Training Configuration:
+
+Context Length (-c or --ctx_len): Specifies the length of the context.
+Number of Batches (-b or --batches_num): Defines the number of batches.
+Embeddings Dimension (-e or --embed_num): Sets the size of the embeddings dimension.
+Number of Block Layers (-n or --layers_num): Determines the number of block layers.
+Number of Epochs (-p or --epochs_num): Specifies the total number of training epochs.
+Steps per Epoch (-s or --steps_num): Defines the number of steps per epoch.
+Learning Rate (-i or --lr_rate): Sets the learning rate. Init/Final LR derivates from it.
+Learning Rate Decay (-d or --lr_decay): Specifies the learning rate decay through steps.
+
+Additional Features:
+
+Tiny Attention (-a or --attention): Enables the tiny attention feature.
+LoRa Activation (-l or --lora): Activates LoRa (Low-Rank Adaptation).
+Gradient Checkpointing (-g or --grad_cp): Enables gradient checkpointing.
 
 MIT License
 Copyright (c) [2023] [Nicolás Iglesias]
@@ -54,7 +77,6 @@ from tokenizer import get_tokenizer, TOKEN_PARAMS_NAME
 
 MODEL_SRC_PATH = f'{os.path.dirname(__file__)}/../model'
 sys.path.append(MODEL_SRC_PATH)
-
 
 """
 Some resets
@@ -142,7 +164,7 @@ class TrainCallback(Callback):
                     f"NEW RUN {args.my_timestamp}\n{self.args._asdict()}\n")
 
                 try:
-                    print(f"\n{trainer.strategy.config}\n")
+                    logger.info(f"\n{trainer.strategy.config}\n")
                     trainer.my_log.write(f"{trainer.strategy.config}\n")
                 except:
                     pass
@@ -211,16 +233,30 @@ class TrainCallback(Callback):
         args = self.args
 
         if trainer.is_global_zero:  # logging & save state_dict
-            if (args.epoch_save > 0 and trainer.current_epoch % args.epoch_save == 0) or (trainer.current_epoch == args.epoch_count - 1):
+            if (args.epoch_save > 0 and trainer.current_epoch % args.epoch_save == 0) or \
+                    (trainer.current_epoch == args.epoch_count - 1):
                 to_save_dict = pl_module.state_dict()
+
+                if hasattr(self.args, 'lora_params'):
+                    enable_time_finetune = 'time' in self.args.lora_params['parts']
+                    enable_ln_finetune = 'ln' in self.args.lora_params['parts']
+                    lora_dict = {}
+
+                    for name, state in to_save_dict.items():
+                        if ('.lora_' in name
+                                or (enable_time_finetune and '.time_' in name)
+                                or (enable_ln_finetune and '.ln' in name)):
+                            lora_dict[name] = state
+
+                    to_save_dict = lora_dict
 
                 try:
                     save_pth(
                         to_save_dict,
                         f"{args.proj_dir}/rwkv-{args.epoch_begin + trainer.current_epoch}.pth",
                     )
-                except Exception as e:
-                    print('Error\n\n', e, '\n\n')
+                except Exception as error:
+                    logger.error(error)
 
             trainer.my_log.write(
                 f"{args.epoch_begin + trainer.current_epoch} {trainer.my_epoch_loss:.6f} {math.exp(trainer.my_epoch_loss):.4f} {trainer.my_lr:.8f} {datetime.datetime.now()} {trainer.current_epoch}\n")
@@ -240,6 +276,10 @@ if __name__ == "__main__":
                             help='The path were tokens parameters were saved by the tokenizer', type=str)
     arg_parser.add_argument('-o', '--output_path', default='out',
                             help='The output path were model binaries will be saved', type=str)
+    arg_parser.add_argument('-m', '--base_model', default=None,
+                            help='Full path for base model/checkpoint', type=str)
+    arg_parser.add_argument('-r', '--lora_ckpt', default=None,
+                            help='Full path for LoRa checkpoint', type=str)
     arg_parser.add_argument(
         '-c', '--ctx_len', default=CTX_LEN, help='The context length', type=int)
     arg_parser.add_argument(
@@ -247,7 +287,7 @@ if __name__ == "__main__":
     arg_parser.add_argument(
         '-e', '--embed_num', default=N_EMBED, help='Size of the embeddings dimension', type=int)
     arg_parser.add_argument(
-        '-l', '--layers_num', default=N_LAYER, help='Number of block layers', type=int)
+        '-n', '--layers_num', default=N_LAYER, help='Number of block layers', type=int)
     arg_parser.add_argument(
         '-p', '--epochs_num', default=EPOCHS, help='Number of epochs', type=int)
     arg_parser.add_argument(
@@ -258,10 +298,24 @@ if __name__ == "__main__":
         '-d', '--lr_decay', default=str(LR_DECAY), help='Learning rate decay thru steps', type=str)
     arg_parser.add_argument('-a', '--attention', help='Enable tiny attention',
                             action='store_true', default=False)
+    arg_parser.add_argument('-l', '--lora', help='Activate LoRa',
+                            action='store_true', default=False)
+    arg_parser.add_argument('-g', '--grad_cp', help='Gradient checkpointing',
+                            action='store_true', default=False)
     args = arg_parser.parse_args()
 
     if args.tokens_path == None:
         raise 'Invalid tokens path'
+
+    # initialize model
+    os.environ['RWKV_T_MAX'] = str(args.ctx_len)
+
+    if args.lora and args.grad_cp:
+        logger.info(
+            '!!!!! LoRA Warning: Gradient Checkpointing requires JIT off, disabling it')
+        os.environ["RWKV_JIT_ON"] = "0"
+
+    from model import RWKV, LORA_CONFIG
 
     try:
         # seed
@@ -302,16 +356,17 @@ if __name__ == "__main__":
             'ctx_len': args.ctx_len,
             'dim_att': args.embed_num,
             'dim_ffn': args.embed_num*4,
-            'dropout_p': 0.25,
-            'eight_bits': False,  # experimental
+            'dropout_p': 0.15,
             'epoch_begin': 0,
             'epoch_count': args.epochs_num,
             'epoch_save': 2,
             'epoch_steps': args.steps_num,
-            'grad_cp': 0,  # model.py:530
+            'grad_cp': 0 if not args.grad_cp else 1,
             'gradient_clip_val': 1.0,
             'head_qk': int(args.embed_num*2),
             'layerwise_lr': 1,
+            'lora': args.lora,
+            'lora_params': LORA_CONFIG,
             'lr_decay': float(args.lr_decay),
             'lr_init': float(args.lr_rate),
             'lr_final': float(args.lr_rate)/100,
@@ -335,15 +390,52 @@ if __name__ == "__main__":
         }
 
         logger.info(params)
-
         params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
 
-        # initialize model
-        os.environ['RWKV_T_MAX'] = str(args.ctx_len)
-        from model import RWKV
-
         model_base = RWKV(params_obj)
-        model_base.to(DEVICE)
+
+        # LoRa customization
+        if params_obj.lora:
+            logger.info('LoRa enabled: preparing modules...')
+
+            enable_time_finetune = 'time' in params_obj.lora_params['parts']
+            enable_ln_finetune = 'ln' in params_obj.lora_params['parts']
+
+            model_base.requires_grad_(False)
+
+            for name, module in model_base.named_modules():
+                # have to check param name since it may have been wrapped by torchscript
+                if any(n.startswith("lora_") for n, _ in module.named_parameters()):
+                    logger.debug(f'LoRA training module {name}')
+                    for pname, param in module.named_parameters():
+                        param.requires_grad = 'lora_' in pname
+                elif enable_ln_finetune and '.ln' in name:
+                    logger.debug(f'LoRA additionally training module {name}')
+                    for param in module.parameters():
+                        param.requires_grad = True
+                elif enable_time_finetune and any(n.startswith("time") for n, _ in module.named_parameters()):
+                    for pname, param in module.named_parameters():
+                        if pname.startswith("time"):
+                            logger.debug(
+                                f'LoRA additionally training parameter {pname}')
+                            param.requires_grad = True
+
+        # Checkpoint preload
+        if params_obj.base_model != None and os.path.isfile(params_obj.base_model):
+            try:
+                logger.info(f'Preloading {params_obj.base_model}')
+                load_dict = torch.load(params_obj.base_model, map_location="cpu")
+
+                # If using LoRA, the LoRA keys might be missing in the original model
+                model_base.load_state_dict(load_dict, strict=(not params_obj.lora))
+
+                if params_obj.lora and os.path.isfile(params_obj.lora_ckpt):
+                    logger.info(f'Preloading LoRa checkpoint {params_obj.lora_ckpt}')
+
+                    model_base.load_state_dict(torch.load(
+                        params_obj.lora_ckpt, map_location="cpu"), strict=False)
+            except Exception as error:
+                logger.error(error)
 
         logger.info('Model initialized')
 
