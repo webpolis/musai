@@ -103,10 +103,10 @@ CTX_LEN = 2048
 # training related
 BATCHES = 5
 N_EMBED = 768
-N_LAYER = 10
+N_LAYER = 18
 EPOCHS = 100
 EPOCH_STEPS = 250
-LR_RATE = 1.5e-5
+LR_RATE = 1e-4
 LR_DECAY = 5e-6
 
 os.environ['RWKV_JIT_ON'] = '0'
@@ -380,7 +380,7 @@ if __name__ == "__main__":
             'lora_params': LORA_CONFIG,
             'lr_decay': float(args.lr_decay),
             'lr_init': float(args.lr_rate),
-            'lr_final': float(args.lr_rate)/100,
+            'lr_final': 1e-07,
             'micro_bsz': args.batches_num,
             'my_pile_stage': 0,
             'my_pos_emb': 0,
