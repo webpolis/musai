@@ -12,7 +12,7 @@ It utilizes command-line arguments to provide flexibility and control over the t
 process. Here is a general overview of the script's capabilities:
 
 Token Parameters: The script allows specifying the path to the token parameters saved by
-the tokenizer. This is done using the -t or --tokens_path argument.
+the tokenizer. This is done using the -t or --dataset_path argument.
 
 Output Path: The trained model binaries can be saved to a specified output path.
 The default output path is set to 'out', but it can be customized using the -o or
@@ -80,7 +80,7 @@ from collections import namedtuple
 from torchtoolkit.data import create_subsets
 from lightning.pytorch.callbacks import Callback
 from torch.utils.data import DataLoader
-from dataset import MIDIDataset
+from dataset import MIDIDataset, RegularDataset
 from tokenizer import get_tokenizer, TOKEN_PARAMS_NAME
 
 MODEL_SRC_PATH = f'{os.path.dirname(__file__)}/../model'
@@ -283,8 +283,10 @@ CLI
 if __name__ == "__main__":
     # parse command line arguments
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('-t', '--tokens_path', default=None,
+    arg_parser.add_argument('-t', '--dataset_path', default=None,
                             help='The path were tokens parameters were saved by the tokenizer', type=str)
+    arg_parser.add_argument('-x', '--binidx', help='Dataset is in binidx format',
+                            action='store_true', default=False)
     arg_parser.add_argument('-o', '--output_path', default='out',
                             help='The output path were model binaries will be saved', type=str)
     arg_parser.add_argument('-m', '--base_model', default=None,
@@ -315,8 +317,8 @@ if __name__ == "__main__":
                             action='store_true', default=False)
     args = arg_parser.parse_args()
 
-    if args.tokens_path == None:
-        raise 'Invalid tokens path'
+    if args.dataset_path == None:
+        raise 'Invalid dataset path'
 
     # initialize model
     os.environ['RWKV_T_MAX'] = str(args.ctx_len)
@@ -333,10 +335,6 @@ if __name__ == "__main__":
         seed = random.randint(1000, 10000)
         pl.seed_everything(seed)
 
-        # initialize tokenizer
-        TOKENIZER = get_tokenizer(
-            params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
-
         # generate output dir
         Path(args.output_path).mkdir(parents=True, exist_ok=True)
         logger.info('Output dir setup.')
@@ -344,30 +342,24 @@ if __name__ == "__main__":
         # construct dataset
         logger.info('Initializing dataset...')
 
-        midi_jsons = list(Path(args.tokens_path).glob('*.json'))
-        random.shuffle(midi_jsons)
+        if not args.binidx:
+            midi_jsons = list(Path(args.dataset_path).glob('*.json'))
+            random.shuffle(midi_jsons)
 
-        DATASET = MIDIDataset(
-            files_paths=midi_jsons,
-            min_seq_len=16,
-            max_seq_len=args.ctx_len,
-            no_labels=False,
-            tokenizer=TOKENIZER,
-            batches=args.batches_num,
-            epoch_steps=args.steps_num
-        )
-        subset_train, subset_valid = create_subsets(DATASET, [0.3])
+            # initialize tokenizer
+            TOKENIZER = get_tokenizer(params=f'{args.dataset_path}/{TOKEN_PARAMS_NAME}')
+            vocab_size = len(TOKENIZER)
+        else:
+            vocab_size = 65536
 
         # build trainer/model params
-        logger.info('Setting up trainer...')
-
         params = {
             'adam_eps': 1e-8,
             'betas': (.9, .99),
             'ctx_len': args.ctx_len,
             'dim_att': args.embed_num,
             'dim_ffn': args.embed_num*4,
-            'dropout_p': 0.15,
+            'dropout_p': 0.1,
             'epoch_begin': 0,
             'epoch_count': args.epochs_num,
             'epoch_save': 2,
@@ -395,15 +387,34 @@ if __name__ == "__main__":
             'strategy': 'ddp_find_unused_parameters_false',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
-            'vocab_size': len(TOKENIZER),
-            'wandb': 'musai',
+            'vocab_size': vocab_size,
+            'wandb': '',
             'warmup_steps': 10,
         }
 
         logger.info(params)
-        params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+
+        # instantiate dataset
+        if not args.binidx:
+            DATASET = MIDIDataset(
+                files_paths=midi_jsons,
+                min_seq_len=16,
+                max_seq_len=args.ctx_len,
+                no_labels=False,
+                tokenizer=TOKENIZER,
+                batches=args.batches_num,
+                epoch_steps=args.steps_num
+            )
+            params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+        else:
+            params['data_type'] = 'binidx'
+            params['data_file'] = args.dataset_path
+            params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+            DATASET = RegularDataset(params_obj)
 
         model_base = RWKV(params_obj)
+
+        logger.info('Setting up trainer...')
 
         # LoRa customization
         if params_obj.lora:
