@@ -105,7 +105,7 @@ if os.environ['RWKV_FLOAT_MODE'] == 'bf16':
             ctx.C = C
             assert T <= T_MAX
             assert B * C % min(C, 32) == 0
-            w = -torch.exp(w.bfloat16().contiguous())
+            w = -torch.exp(w.float().contiguous())
             u = u.bfloat16().contiguous()
             k = k.bfloat16().contiguous()
             v = v.bfloat16().contiguous()
@@ -501,7 +501,7 @@ class RWKV(pl.LightningModule):
             optim_groups = [g for g in optim_groups if len(g["params"]) > 0]
 
         if self.deepspeed_offload:
-            return DeepSpeedCPUAdam(optim_groups, lr=self.args.lr_init, betas=self.args.betas, eps=self.args.adam_eps, bias_correction=True, adamw_mode=False, weight_decay=0, amsgrad=False)
+            return DeepSpeedCPUAdam(optim_groups, lr=self.args.lr_init, betas=self.args.betas, eps=self.args.adam_eps, bias_correction=True, adamw_mode=False, weight_decay=0.01, amsgrad=False)
 
         return FusedAdam(optim_groups, lr=self.args.lr_init, betas=self.args.betas, eps=self.args.adam_eps, bias_correction=True, adam_w_mode=False, weight_decay=0.01, amsgrad=False)
 
