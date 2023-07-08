@@ -12,7 +12,7 @@ It utilizes command-line arguments to provide flexibility and control over the t
 process. Here is a general overview of the script's capabilities:
 
 Token Parameters: The script allows specifying the path to the token parameters saved by
-the tokenizer. This is done using the -t or --tokens_path argument.
+the tokenizer. This is done using the -t or --dataset_path argument.
 
 Output Path: The trained model binaries can be saved to a specified output path.
 The default output path is set to 'out', but it can be customized using the -o or
@@ -72,6 +72,7 @@ import gc
 import os
 import torch
 import lightning.pytorch as pl
+import deepspeed
 import sys
 from multiprocessing import cpu_count
 from loguru import logger
@@ -79,8 +80,9 @@ from pathlib import Path
 from collections import namedtuple
 from torchtoolkit.data import create_subsets
 from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.strategies import DeepSpeedStrategy
 from torch.utils.data import DataLoader
-from dataset import MIDIDataset
+from dataset import MIDIDataset, RegularDataset
 from tokenizer import get_tokenizer, TOKEN_PARAMS_NAME
 
 MODEL_SRC_PATH = f'{os.path.dirname(__file__)}/../model'
@@ -98,12 +100,12 @@ Some definitions
 """
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 PRECISION = 'bf16'
-CTX_LEN = 2048
+CTX_LEN = 1024
 
 # training related
 BATCHES = 5
-N_EMBED = 768
-N_LAYER = 18
+N_EMBED = 1024
+N_LAYER = 24
 EPOCHS = 100
 EPOCH_STEPS = 250
 LR_RATE = 1e-4
@@ -283,8 +285,10 @@ CLI
 if __name__ == "__main__":
     # parse command line arguments
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('-t', '--tokens_path', default=None,
+    arg_parser.add_argument('-t', '--dataset_path', default=None,
                             help='The path were tokens parameters were saved by the tokenizer', type=str)
+    arg_parser.add_argument('-x', '--binidx', help='Dataset is in binidx format',
+                            action='store_true', default=False)
     arg_parser.add_argument('-o', '--output_path', default='out',
                             help='The output path were model binaries will be saved', type=str)
     arg_parser.add_argument('-m', '--base_model', default=None,
@@ -315,8 +319,8 @@ if __name__ == "__main__":
                             action='store_true', default=False)
     args = arg_parser.parse_args()
 
-    if args.tokens_path == None:
-        raise 'Invalid tokens path'
+    if args.dataset_path == None:
+        raise 'Invalid dataset path'
 
     # initialize model
     os.environ['RWKV_T_MAX'] = str(args.ctx_len)
@@ -333,10 +337,6 @@ if __name__ == "__main__":
         seed = random.randint(1000, 10000)
         pl.seed_everything(seed)
 
-        # initialize tokenizer
-        TOKENIZER = get_tokenizer(
-            params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
-
         # generate output dir
         Path(args.output_path).mkdir(parents=True, exist_ok=True)
         logger.info('Output dir setup.')
@@ -344,30 +344,24 @@ if __name__ == "__main__":
         # construct dataset
         logger.info('Initializing dataset...')
 
-        midi_jsons = list(Path(args.tokens_path).glob('*.json'))
-        random.shuffle(midi_jsons)
+        if not args.binidx:
+            midi_jsons = list(Path(args.dataset_path).glob('*.json'))
+            random.shuffle(midi_jsons)
 
-        DATASET = MIDIDataset(
-            files_paths=midi_jsons,
-            min_seq_len=16,
-            max_seq_len=args.ctx_len,
-            no_labels=False,
-            tokenizer=TOKENIZER,
-            batches=args.batches_num,
-            epoch_steps=args.steps_num
-        )
-        subset_train, subset_valid = create_subsets(DATASET, [0.3])
+            # initialize tokenizer
+            TOKENIZER = get_tokenizer(params=f'{args.dataset_path}/{TOKEN_PARAMS_NAME}')
+            vocab_size = len(TOKENIZER)
+        else:
+            vocab_size = 65536
 
         # build trainer/model params
-        logger.info('Setting up trainer...')
-
         params = {
             'adam_eps': 1e-8,
             'betas': (.9, .99),
             'ctx_len': args.ctx_len,
             'dim_att': args.embed_num,
             'dim_ffn': args.embed_num*4,
-            'dropout_p': 0.15,
+            'dropout_p': 0.1,
             'epoch_begin': 0,
             'epoch_count': args.epochs_num,
             'epoch_save': 2,
@@ -375,7 +369,7 @@ if __name__ == "__main__":
             'grad_cp': 0 if not args.grad_cp else 1,
             'gradient_clip_val': 1.0,
             'head_qk': int(args.embed_num*2),
-            'layerwise_lr': 1,
+            'layerwise_lr': -1,
             'lora': args.lora,
             'lora_params': LORA_CONFIG,
             'lr_decay': float(args.lr_decay),
@@ -392,18 +386,37 @@ if __name__ == "__main__":
             'pre_ffn': 0,
             'proj_dir': args.output_path,
             'real_bsz':  args.batches_num,
-            'strategy': 'ddp_find_unused_parameters_false',
+            'strategy': 'deepspeed_stage_2_offload',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
-            'vocab_size': len(TOKENIZER),
-            'wandb': 'musai',
+            'vocab_size': vocab_size,
+            'wandb': '',
             'warmup_steps': 10,
         }
 
         logger.info(params)
-        params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+
+        # instantiate dataset
+        if not args.binidx:
+            DATASET = MIDIDataset(
+                files_paths=midi_jsons,
+                min_seq_len=16,
+                max_seq_len=args.ctx_len,
+                no_labels=False,
+                tokenizer=TOKENIZER,
+                batches=args.batches_num,
+                epoch_steps=args.steps_num
+            )
+            params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+        else:
+            params['data_type'] = 'binidx'
+            params['data_file'] = args.dataset_path
+            params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+            DATASET = RegularDataset(params_obj)
 
         model_base = RWKV(params_obj)
+
+        logger.info('Setting up trainer...')
 
         # LoRa customization
         if params_obj.lora:
@@ -452,6 +465,50 @@ if __name__ == "__main__":
         logger.info('Model initialized')
 
         # prepare for training
+        DEEPSPEED_CONFIG = {
+            'optimizer': {
+                'type': 'AdamW',
+                'params': {
+                    'lr': params_obj.lr_init,
+                    'betas': params_obj.betas,
+                    'eps': params_obj.adam_eps,
+                    'weight_decay': 0.01
+                }
+            },
+            'scheduler': {
+                'type': 'WarmupDecayLR',
+                'params': {
+                    'total_num_steps': params_obj.epoch_steps*params_obj.epoch_count,
+                    'warmup_max_lr': params_obj.lr_init,
+                    'warmup_num_steps': params_obj.warmup_steps
+                }
+            },
+            'zero_optimization': {
+                'stage': 2,
+                'allgather_partitions': False,
+                'allgather_bucket_size': 2e8,
+                'reduce_scatter': False,
+                'reduce_bucket_size': 2e8,
+                'overlap_comm': False,
+                'contiguous_gradients': False,
+                'offload_optimizer': {
+                    'device': 'cpu'
+                },
+                'offload_param': {
+                    'device': 'cpu',
+                    'pin_memory': True
+                },
+            },
+            'bf16': {
+                'enabled': True,
+            },
+            'fp16': {
+                'enabled': False,
+            },
+            'train_batch_size': args.batches_num,
+            'train_micro_batch_size_per_gpu': args.batches_num
+        }
+
         logger.info('Loading data...')
         data_loader = DataLoader(DATASET, shuffle=False, pin_memory=True,
                                  batch_size=params_obj.micro_bsz, num_workers=cpu_count(), persistent_workers=False, drop_last=True)
@@ -461,9 +518,9 @@ if __name__ == "__main__":
             'devices': 'auto',
             'max_steps': args.steps_num*args.epochs_num,
             'accelerator': 'gpu',
-            'strategy': 'auto',
+            'strategy': DeepSpeedStrategy(config=DEEPSPEED_CONFIG),
             'enable_checkpointing': True,
-            'precision': '16',
+            'precision': '16-mixed',
             'callbacks': [TrainCallback(params_obj)],
         }
         trainer_pl = pl.Trainer(**trainer_params)
