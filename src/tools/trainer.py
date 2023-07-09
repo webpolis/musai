@@ -109,7 +109,7 @@ N_LAYER = 24
 EPOCHS = 100
 EPOCH_STEPS = 250
 LR_RATE = 1e-4
-LR_DECAY = 5e-6
+LR_DECAY = 0
 
 os.environ['RWKV_JIT_ON'] = '0'
 os.environ['RWKV_FLOAT_MODE'] = PRECISION
@@ -386,7 +386,7 @@ if __name__ == "__main__":
             'pre_ffn': 0,
             'proj_dir': args.output_path,
             'real_bsz':  args.batches_num,
-            'strategy': 'deepspeed_stage_2_offload',
+            'strategy': 'deepspeed_stage_3_offload',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
             'vocab_size': vocab_size,
@@ -484,7 +484,7 @@ if __name__ == "__main__":
                 }
             },
             'zero_optimization': {
-                'stage': 2,
+                'stage': 3,
                 'allgather_partitions': False,
                 'allgather_bucket_size': 2e8,
                 'reduce_scatter': False,
