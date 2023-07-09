@@ -46,7 +46,7 @@ LORA_CONFIG = {
     "r": 8,
     "alpha": 32,
     "dropout": 0.001,
-    "parts": {"att", "ln", "time"},
+    "parts": {"att", "ffn", "ln", "time"},
 }
 
 

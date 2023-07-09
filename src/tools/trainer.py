@@ -77,10 +77,9 @@ import sys
 from multiprocessing import cpu_count
 from loguru import logger
 from pathlib import Path
-from collections import namedtuple
-from torchtoolkit.data import create_subsets
+from collections import namedtuple, OrderedDict
+from typing import Dict
 from lightning.pytorch.callbacks import Callback
-from lightning.pytorch.strategies import DeepSpeedStrategy
 from torch.utils.data import DataLoader
 from dataset import MIDIDataset, RegularDataset
 from tokenizer import get_tokenizer, TOKEN_PARAMS_NAME
@@ -295,6 +294,8 @@ if __name__ == "__main__":
                             help='Full path for base model/checkpoint', type=str)
     arg_parser.add_argument('-r', '--lora_ckpt', default=None,
                             help='Full path for LoRa checkpoint', type=str)
+    arg_parser.add_argument('-k', '--model_ckpt', default=None,
+                            help='Full path for model checkpoint', type=str)
     arg_parser.add_argument(
         '-c', '--ctx_len', default=CTX_LEN, help='The context length', type=int)
     arg_parser.add_argument(
@@ -316,6 +317,8 @@ if __name__ == "__main__":
     arg_parser.add_argument('-l', '--lora', help='Activate LoRa (Low-Rank Adaptation)',
                             action='store_true', default=False)
     arg_parser.add_argument('-g', '--grad_cp', help='Gradient checkpointing',
+                            action='store_true', default=False)
+    arg_parser.add_argument('-q', '--head_qk', help='Enable head QK',
                             action='store_true', default=False)
     args = arg_parser.parse_args()
 
@@ -368,8 +371,8 @@ if __name__ == "__main__":
             'epoch_steps': args.steps_num,
             'grad_cp': 0 if not args.grad_cp else 1,
             'gradient_clip_val': 1.0,
-            'head_qk': int(args.embed_num*2),
-            'layerwise_lr': -1,
+            'head_qk': 0 if not args.head_qk else int(args.embed_num*2),
+            'layerwise_lr': 1,
             'lora': args.lora,
             'lora_params': LORA_CONFIG,
             'lr_decay': float(args.lr_decay),
@@ -386,7 +389,7 @@ if __name__ == "__main__":
             'pre_ffn': 0,
             'proj_dir': args.output_path,
             'real_bsz':  args.batches_num,
-            'strategy': 'deepspeed_stage_3_offload',
+            'strategy': 'deepspeed_stage_2_offload',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
             'vocab_size': vocab_size,
@@ -448,7 +451,12 @@ if __name__ == "__main__":
         if args.base_model != None and os.path.isfile(args.base_model):
             try:
                 logger.info(f'Preloading {args.base_model}')
-                load_dict = torch.load(args.base_model, map_location="cpu")
+                load_dict = torch.load(args.base_model, map_location='cpu')
+                load_keys = load_dict.keys()
+
+                for k in model_base.state_dict():
+                    if k not in load_keys:
+                        load_dict[k] = model_base.state_dict()[k]
 
                 # If using LoRA, the LoRA keys might be missing in the original model
                 model_base.load_state_dict(load_dict, strict=(not args.lora))
@@ -458,72 +466,46 @@ if __name__ == "__main__":
                     logger.info(f'Preloading LoRa checkpoint {args.lora_ckpt}')
 
                     model_base.load_state_dict(torch.load(
-                        args.lora_ckpt, map_location="cpu"), strict=False)
+                        args.lora_ckpt, map_location='cpu'), strict=False)
+                elif args.model_ckpt != None:
+                    # Merge base model with checkpoint's state
+                    logger.info(f'Preloading checkpoint {args.model_ckpt}')
+
+                    w_main: Dict[str, torch.Tensor] = model_base.state_dict()
+                    w_ckpt: Dict[str, torch.Tensor] = torch.load(
+                        args.model_ckpt, map_location='cpu')
+
+                    for k in w_ckpt.keys():
+                        w_main[k] = w_ckpt[k].clone() if len(
+                            w_ckpt[k]) != 0 else w_main[k]
+
+                    model_base.load_state_dict(w_main)
             except Exception as error:
                 logger.error(error)
 
         logger.info('Model initialized')
 
         # prepare for training
-        DEEPSPEED_CONFIG = {
-            'optimizer': {
-                'type': 'AdamW',
-                'params': {
-                    'lr': params_obj.lr_init,
-                    'betas': params_obj.betas,
-                    'eps': params_obj.adam_eps,
-                    'weight_decay': 0.01
-                }
-            },
-            'scheduler': {
-                'type': 'WarmupDecayLR',
-                'params': {
-                    'total_num_steps': params_obj.epoch_steps*params_obj.epoch_count,
-                    'warmup_max_lr': params_obj.lr_init,
-                    'warmup_num_steps': params_obj.warmup_steps
-                }
-            },
-            'zero_optimization': {
-                'stage': 3,
-                'allgather_partitions': False,
-                'allgather_bucket_size': 2e8,
-                'reduce_scatter': False,
-                'reduce_bucket_size': 2e8,
-                'overlap_comm': False,
-                'contiguous_gradients': False,
-                'offload_optimizer': {
-                    'device': 'cpu'
-                },
-                'offload_param': {
-                    'device': 'cpu',
-                    'pin_memory': True
-                },
-            },
-            'bf16': {
-                'enabled': True,
-            },
-            'fp16': {
-                'enabled': False,
-            },
-            'train_batch_size': args.batches_num,
-            'train_micro_batch_size_per_gpu': args.batches_num
-        }
-
         logger.info('Loading data...')
         data_loader = DataLoader(DATASET, shuffle=False, pin_memory=True,
                                  batch_size=params_obj.micro_bsz, num_workers=cpu_count(), persistent_workers=False, drop_last=True)
+        TRAIN_CALLBACK = TrainCallback(params_obj)
         trainer_params = {
             'gradient_clip_val': 1.0,
             'log_every_n_steps': 100,
             'devices': 'auto',
             'max_steps': args.steps_num*args.epochs_num,
             'accelerator': 'gpu',
-            'strategy': DeepSpeedStrategy(config=DEEPSPEED_CONFIG),
-            'enable_checkpointing': True,
-            'precision': '16-mixed',
-            'callbacks': [TrainCallback(params_obj)],
+            'enable_checkpointing': False,
+            'strategy': params_obj.strategy,
+            'precision': PRECISION,
+            'callbacks': [TRAIN_CALLBACK],
         }
         trainer_pl = pl.Trainer(**trainer_params)
+
+        if 'deepspeed' in params_obj.strategy:
+            trainer_pl.strategy.config['zero_optimization']['allgather_bucket_size'] = 200 * 1000 * 1000
+            trainer_pl.strategy.config['zero_optimization']['reduce_bucket_size'] = 200 * 1000 * 1000
 
         # begin training
         logger.info('Begin training...')
