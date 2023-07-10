@@ -367,7 +367,7 @@ if __name__ == "__main__":
             'dropout_p': 0.1,
             'epoch_begin': 0,
             'epoch_count': args.epochs_num,
-            'epoch_save': 2,
+            'epoch_save': 1,
             'epoch_steps': args.steps_num,
             'grad_cp': 0 if not args.grad_cp else 1,
             'gradient_clip_val': 1.0,
