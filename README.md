@@ -14,7 +14,7 @@ MusAI is an innovative project that leverages the power of machine learning to g
 
 ## Installation
 
-(todo)
+`pip install -U -r requirements.txt`
 
 ## Usage
 

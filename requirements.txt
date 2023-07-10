@@ -3,7 +3,7 @@ importlib_metadata==6.7.0
 lightning==2.0.2
 loguru==0.7.0
 miditok==2.0.6
-miditoolkit==0.1.16
+miditoolkit @ git+https://github.com/webpolis/miditoolkit@master
 numpy==1.23.5
 psutil==5.9.5
 ray==2.4.0
