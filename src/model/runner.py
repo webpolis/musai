@@ -279,6 +279,29 @@ class RWKV_RNN(BaseModule):
 
 
 def sample_logits(logits, temperature=1.0, top_p=0.85, top_k=0):
+    """
+    Samples an output index from the logits using temperature, top-p, and top-k sampling.
+
+    Args:
+        logits (torch.Tensor): The input logits.
+        temperature (float, optional): The temperature parameter controlling the randomness of the sampling.
+            Lower values (e.g., < 1.0) make the sampling more deterministic, while higher values introduce more randomness.
+            Defaults to 1.0.
+        top_p (float, optional): The top-p (nucleus) parameter for selecting the most probable tokens.
+            Tokens below the cumulative probability threshold will be filtered out.
+            Should be in the range [0, 1].
+            Defaults to 0.85.
+        top_k (int, optional): The top-k parameter for selecting the k most probable tokens.
+            Tokens with lower probabilities will be filtered out.
+            Should be a non-negative integer.
+            Defaults to 0.
+
+    Returns:
+        int: The sampled output index.
+
+    Note:
+        - The input logits should have a shape of (batch_size, vocab_size).
+    """
     probs = F.softmax(logits.float(), dim=-1)
     top_k = int(top_k)
 
@@ -314,6 +337,22 @@ def sample_logits(logits, temperature=1.0, top_p=0.85, top_k=0):
 
 
 def repetition_penalty(scores, history, ignore_tokens=[], repetition_penalty=1.1, max_penalty=1.5, seq_len=128, decay_factor=0.85):
+    """
+    Applies a repetition penalty to the scores of generated tokens based on their repetition in the history.
+
+    Args:
+        scores (torch.Tensor): Tensor of scores for each generated token.
+        history (List[int]): List of previously generated tokens.
+        ignore_tokens (List[int], optional): List of tokens to ignore when calculating repetition penalties.
+        repetition_penalty (float, optional): Penalty factor applied to repeated tokens. Higher values increase the penalty.
+        max_penalty (float, optional): Maximum penalty factor that can be applied. This value restricts the maximum impact of the penalty.
+        seq_len (int, optional): Length of the history or context considered for detecting repetitions. Default is 128.
+        decay_factor (float, optional): Decay factor controlling the impact of token recency in the repetition penalty. A 
+             value closer to 1 assigns more weight to recent tokens, while a value closer to 0 gives more weight to older tokens.
+
+    Returns:
+        torch.Tensor: Scores modified with the repetition penalty applied.
+    """
     repetition_view_length = seq_len  # how far back to look for repetitions
     repetition_context = torch.tensor(
         history[-repetition_view_length:]).to(scores.device)
