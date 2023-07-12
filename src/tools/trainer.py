@@ -80,6 +80,7 @@ from pathlib import Path
 from collections import namedtuple, OrderedDict
 from typing import Dict
 from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.strategies import DeepSpeedStrategy
 from torch.utils.data import DataLoader
 from dataset import MIDIDataset, RegularDataset
 from tokenizer import get_tokenizer, TOKEN_PARAMS_NAME
@@ -372,7 +373,7 @@ if __name__ == "__main__":
             'grad_cp': 0 if not args.grad_cp else 1,
             'gradient_clip_val': 1.0,
             'head_qk': 0 if not args.head_qk else int(args.embed_num*2),
-            'layerwise_lr': 1,
+            'layerwise_lr': 0,
             'lora': args.lora,
             'lora_params': LORA_CONFIG,
             'lr_decay': float(args.lr_decay),
@@ -490,22 +491,62 @@ if __name__ == "__main__":
         data_loader = DataLoader(DATASET, shuffle=False, pin_memory=True,
                                  batch_size=params_obj.micro_bsz, num_workers=cpu_count(), persistent_workers=False, drop_last=True)
         TRAIN_CALLBACK = TrainCallback(params_obj)
+        DEEPSPEED_CONFIG = {
+            'optimizer': {
+                'type': 'Adam',
+                'params': {
+                    'lr': params_obj.lr_init,
+                    'betas': params_obj.betas,
+                    'eps': params_obj.adam_eps,
+                    'weight_decay': 3e-7
+                }
+            },
+            'scheduler': {
+                'type': 'WarmupDecayLR',
+                'params': {
+                    'total_num_steps': params_obj.epoch_steps*params_obj.epoch_count,
+                    'warmup_min_lr': params_obj.lr_final,
+                    'warmup_max_lr': params_obj.lr_init,
+                    'warmup_num_steps': params_obj.warmup_steps
+                }
+            },
+            'zero_optimization': {
+                'stage': 2,
+                'allgather_partitions': False,
+                'allgather_bucket_size': 200 * 1000 * 1000,
+                'reduce_scatter': False,
+                'reduce_bucket_size': 200 * 1000 * 1000,
+                'overlap_comm': False,
+                'contiguous_gradients': False,
+                'offload_optimizer': {
+                    'device': 'cpu'
+                },
+                'offload_param': {
+                    'device': 'cpu',
+                    'pin_memory': True
+                },
+            },
+            'bf16': {
+                'enabled': True,
+            },
+            'fp16': {
+                'enabled': False,
+            },
+            'train_batch_size': args.batches_num,
+            'train_micro_batch_size_per_gpu': args.batches_num
+        }
         trainer_params = {
             'gradient_clip_val': 1.0,
-            'log_every_n_steps': 100,
+            'log_every_n_steps': args.steps_num//10,
             'devices': 'auto',
             'max_steps': args.steps_num*args.epochs_num,
             'accelerator': 'gpu',
             'enable_checkpointing': False,
-            'strategy': params_obj.strategy,
+            'strategy':  DeepSpeedStrategy(config=DEEPSPEED_CONFIG),
             'precision': PRECISION,
             'callbacks': [TRAIN_CALLBACK],
         }
         trainer_pl = pl.Trainer(**trainer_params)
-
-        if 'deepspeed' in params_obj.strategy:
-            trainer_pl.strategy.config['zero_optimization']['allgather_bucket_size'] = 200 * 1000 * 1000
-            trainer_pl.strategy.config['zero_optimization']['reduce_bucket_size'] = 200 * 1000 * 1000
 
         # begin training
         logger.info('Begin training...')
