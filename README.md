@@ -43,7 +43,7 @@ options:
   -a {REMI,MMM}, --algo {REMI,MMM}
                         Tokenization algorithm
   -c CLASSES, --classes CLASSES
-                        Only extract this instruments classes (e.g. 1,14,16,3,4,10,11)
+                        Only extract these instruments classes (e.g. 1,14,16,3,4,10,11)
   -r CLASSES_REQ, --classes_req CLASSES_REQ
                         Minimum set of instruments classes required (e.g. 1,14,16)
   -l LENGTH, --length LENGTH
@@ -88,7 +88,7 @@ options:
   -h, --help            show this help message and exit
   -t DATASET_PATH, --dataset_path DATASET_PATH
                         The path were tokens parameters were saved by the tokenizer
-  -x, --binidx          Dataset is in binidx format
+  -x, --binidx          Dataset is in binidx format (Generated via https://github.com/Abel2076/json2binidx_tool) 
   -o OUTPUT_PATH, --output_path OUTPUT_PATH
                         The output path were model binaries will be saved
   -m BASE_MODEL, --base_model BASE_MODEL
