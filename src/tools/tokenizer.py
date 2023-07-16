@@ -475,7 +475,7 @@ if __name__ == "__main__":
             set(reduce(iconcat, MIDI_PROGRAMS, [])))]
 
         # initializes tokenizer
-        TOKENIZER = get_tokenizer(programs=programs_used)
+        TOKENIZER = get_tokenizer(programs=programs_used, algo=args.algo)
 
         # process tokenization via Ray
         if not args.debug:
@@ -511,7 +511,7 @@ if __name__ == "__main__":
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
         if not args.process:
-            TOKENIZER = get_tokenizer(params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}')
+            TOKENIZER = get_tokenizer(params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', algo=args.algo)
 
         logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
             TOKENIZER))
