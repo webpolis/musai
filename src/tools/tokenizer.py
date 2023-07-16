@@ -49,7 +49,8 @@ from loguru import logger
 from typing import Tuple
 from pathlib import Path
 from miditok import REMIPlus, MMM
-from miditok.constants import ADDITIONAL_TOKENS, BEAT_RES, INSTRUMENT_CLASSES
+from miditok.constants import REST_RANGE, BEAT_RES, INSTRUMENT_CLASSES, CHORD_MAPS
+from miditok.classes import TokenizerConfig
 from miditok.utils import merge_tracks_per_class, merge_same_program_tracks, get_midi_programs
 from miditoolkit import MidiFile
 from tqdm import tqdm
@@ -182,7 +183,7 @@ if __name__ == "__main__":
     arg_parser.add_argument('-p', '--process', help='Extracts tokens from the MIDI files',
                             action='store_true', default=False)
     arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
-                            choices=TOKENIZER_ALGOS, default='MMM', type=str)
+                            choices=TOKENIZER_ALGOS, default='REMI', type=str)
     arg_parser.add_argument('-c', '--classes', help='Only extract this instruments classes (e.g. 1,14,16,3,4,10,11)',
                             default=None, type=str)
     arg_parser.add_argument('-r', '--classes_req', help='Minimum set of instruments classes required (e.g. 1,14,16)',
@@ -258,27 +259,34 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
     if algo not in TOKENIZER_ALGOS:
         raise 'Invalid tokenization algorithm'
 
-    additional_tokens = ADDITIONAL_TOKENS
-    additional_tokens['Chord'] = True
-    additional_tokens['TimeSignature'] = True
-    additional_tokens['Program'] = True
-    additional_tokens['nb_tempos'] = BINS_TEMPO
+    TOKENIZER_PARAMS = {
+        'beat_res': BEAT_RES,
+        'use_chords': True,
+        'use_rests': True,
+        'use_tempos': True,
+        'use_time_signatures': True,
+        'use_programs': True,
+        'chord_maps': CHORD_MAPS,
+        'chord_tokens_with_root_note': True,  # Tokens will look as 'Chord_C:maj'
+        'chord_unknown': (3, 6),
+        'rest_range': REST_RANGE,
+        'nb_tempos': BINS_TEMPO,
+        'tempo_range': (40, 250),
+        'nb_velocities': BINS_VELOCITY,
+        'time_signature_range': (16, 2),
+    }
 
     if programs != None:
-        additional_tokens['programs'] = programs
+        TOKENIZER_PARAMS['programs'] = programs
 
     tokenizer = None
 
     if algo == 'REMI':
-        tokenizer = REMIPlus(pitch_range=PITCH_RANGE,
-                             additional_tokens=additional_tokens,
-                             nb_velocities=BINS_VELOCITY,
-                             params=params)
+        tokenizer = REMIPlus(tokenizer_config=TokenizerConfig.from_dict(
+            TOKENIZER_PARAMS), params=params)
     elif algo == 'MMM':
-        tokenizer = MMM(pitch_range=PITCH_RANGE,
-                        additional_tokens=additional_tokens,
-                        nb_velocities=BINS_VELOCITY,
-                        params=params)
+        tokenizer = MMM(tokenizer_config=TokenizerConfig.from_dict(
+            TOKENIZER_PARAMS), params=params)
 
     logger.info('Tokenizer initialized. Using {algo}', algo=algo)
 
@@ -511,7 +519,8 @@ if __name__ == "__main__":
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
         if not args.process:
-            TOKENIZER = get_tokenizer(params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', algo=args.algo)
+            TOKENIZER = get_tokenizer(
+                params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', algo=args.algo)
 
         logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
             TOKENIZER))
