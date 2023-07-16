@@ -282,11 +282,11 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
     tokenizer = None
 
     if algo == 'REMI':
-        tokenizer = REMIPlus(tokenizer_config=TokenizerConfig.from_dict(
-            TOKENIZER_PARAMS), params=params)
+        tokenizer = REMIPlus(tokenizer_config=TokenizerConfig(
+            **TOKENIZER_PARAMS), params=params)
     elif algo == 'MMM':
-        tokenizer = MMM(tokenizer_config=TokenizerConfig.from_dict(
-            TOKENIZER_PARAMS), params=params)
+        tokenizer = MMM(tokenizer_config=TokenizerConfig(
+            **TOKENIZER_PARAMS), params=params)
 
     logger.info('Tokenizer initialized. Using {algo}', algo=algo)
 
