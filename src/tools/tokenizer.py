@@ -259,6 +259,10 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
     if algo not in TOKENIZER_ALGOS:
         raise 'Invalid tokenization algorithm'
 
+    if params != None:
+        params_cfg = json.load(open(params, 'r'))
+        algo = params_cfg['tokenization']
+
     TOKENIZER_PARAMS = {
         'beat_res': BEAT_RES,
         'use_chords': True,
@@ -281,7 +285,7 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
 
     tokenizer = None
 
-    if algo == 'REMI':
+    if algo == 'REMI' or algo == 'REMIPlus':
         tokenizer = REMIPlus(tokenizer_config=TokenizerConfig(
             **TOKENIZER_PARAMS), params=params)
     elif algo == 'MMM':
