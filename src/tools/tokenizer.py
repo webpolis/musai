@@ -429,7 +429,10 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, classes_
             for each MIDI file in the collection.
     :rtype: dict
     """
-    midi_file_paths = list(Path(midis_path).glob(midis_glob))
+    if os.path.isfile(midis_path):
+        midi_file_paths = [line.strip() for line in open(midis_path) if line.strip()]
+    else:
+        midi_file_paths = list(Path(midis_path).glob(midis_glob))
 
     logger.info(
         'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
