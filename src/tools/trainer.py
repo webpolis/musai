@@ -306,6 +306,8 @@ if __name__ == "__main__":
     arg_parser.add_argument(
         '-n', '--layers_num', default=N_LAYER, help='Number of block layers', type=int)
     arg_parser.add_argument(
+                    '-f', '--epochs_first', default=0, help='Initial epoch', type=int)
+    arg_parser.add_argument(
         '-p', '--epochs_num', default=EPOCHS, help='Number of epochs', type=int)
     arg_parser.add_argument(
         '-s', '--steps_num', default=EPOCH_STEPS, help='Number of steps per epoch', type=int)
@@ -366,7 +368,7 @@ if __name__ == "__main__":
             'dim_att': args.embed_num,
             'dim_ffn': args.embed_num*4,
             'dropout_p': 0.1,
-            'epoch_begin': 0,
+            'epoch_begin': args.epochs_first,
             'epoch_count': args.epochs_num,
             'epoch_save': 1,
             'epoch_steps': args.steps_num,
