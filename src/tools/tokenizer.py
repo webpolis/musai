@@ -289,7 +289,7 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
         tokenizer = REMIPlus(tokenizer_config=TokenizerConfig(
             **TOKENIZER_PARAMS), params=params)
     elif algo == 'MMM':
-        tokenizer = MMM(tokenizer_config=TokenizerConfig(
+        tokenizer = MMM(density_bins_max=(10, 20), tokenizer_config=TokenizerConfig(
             **TOKENIZER_PARAMS), params=params)
 
     logger.info('Tokenizer initialized. Using {algo}', algo=algo)
