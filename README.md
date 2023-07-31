@@ -8,9 +8,10 @@ MusAI is an innovative project that leverages the power of machine learning to g
 - MIDI music generation using a combination of architectures ([RWKV](https://github.com/BlinkDL/RWKV-LM), LSTM, etc.)
 - Fine-tune or generate a new model from scratch using a custom dataset 
 - Instrument based sequence training and generation (drums, bass, etc.)
+- Pre-trained embeddings using a Variational Autoencoder ([@WIP](https://github.com/webpolis/musai/wiki/Experimental))
 - Adjustable parameters to customize the style and complexity of the generated music
 - High-quality output MIDI files for further refinement or direct use in your projects
-- Seamless integration with your favorite music production tools via VST bridge (@TODO)
+- Seamless integration with your favorite music production tools via VST bridge (@WIP)
 
 ## Installation
 
