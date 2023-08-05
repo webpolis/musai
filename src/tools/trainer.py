@@ -398,10 +398,11 @@ if __name__ == "__main__":
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
             'vae_emb': {
                 'enabled': args.vae_emb != None,
+                'embed_dim': args.embed_num,
                 'hidden_dim': HIDDEN_DIM,
                 'latent_dim': LATENT_DIM,
-                'base_model': os.path.abspath(args.vae_emb) if args.vae_emb != None \
-                    and args.vae_emb != 'true' else None,
+                'base_model': os.path.abspath(args.vae_emb) if args.vae_emb != None
+                and args.vae_emb != 'true' else None,
             },
             'vocab_size': vocab_size,
             'wandb': '',
@@ -427,6 +428,10 @@ if __name__ == "__main__":
             params['data_file'] = args.dataset_path
             params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
             DATASET = RegularDataset(params_obj)
+
+        # extra embeddings metadata
+        if not args.binidx:
+            params_obj.vae_emb['vocab_size'] = len(TOKENIZER)
 
         model_base = RWKV(params_obj)
 
