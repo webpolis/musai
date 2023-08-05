@@ -9,6 +9,7 @@ from torch.utils.cpp_extension import load
 from torch.nn import functional as F
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 from lightning.pytorch.strategies import DeepSpeedStrategy
+from embed import VAE
 
 if importlib.util.find_spec('deepspeed'):
     import deepspeed
@@ -425,8 +426,11 @@ class RWKV(pl.LightningModule):
         if not hasattr(args, 'tiny_att_dim'):
             args.tiny_att_dim = -1
 
-        self.emb = nn.Embedding(
-            args.vocab_size, args.n_embd, padding_idx=args.padding_idx)
+        if args.vae_emb != None:
+            self.emb = VAE.from_pretrained(args.vae_emb)
+        else:
+            self.emb = nn.Embedding(
+                args.vocab_size, args.n_embd, padding_idx=args.padding_idx)
 
         self.blocks = nn.ModuleList([Block(args, i)
                                     for i in range(args.n_layer)])
@@ -518,7 +522,11 @@ class RWKV(pl.LightningModule):
         B, T = idx.size()
         assert T <= args.ctx_len, 'Cannot forward, model ctx_len is exhausted.'
 
-        x = self.emb(idx)
+        if args.vae_emb != None:
+            _, x, _, _, _, _ = self.emb(idx)
+        else:
+            x = self.emb(idx)
+
         x_emb = x
 
         if args.tiny_att_dim > 0:
