@@ -92,7 +92,7 @@ options:
   -x, --binidx          Dataset is in binidx format (Generated via https://github.com/Abel2076/json2binidx_tool) 
   -o OUTPUT_PATH, --output_path OUTPUT_PATH
                         The output path were model binaries will be saved
-  -m BASE_MODEL, --base_model BASE_MODEL
+  -m BASE_MODEL, --base_model BASE_MODEL or true if training from scratch
                         Full path for base model/checkpoint
   -r LORA_CKPT, --lora_ckpt LORA_CKPT
                         Full path for LoRa checkpoint
