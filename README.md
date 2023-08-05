@@ -5,10 +5,10 @@ MusAI is an innovative project that leverages the power of machine learning to g
 ## Features
 
 - Full-featured tokenizer using parallelization via Ray
-- MIDI music generation using a combination of architectures ([RWKV](https://github.com/BlinkDL/RWKV-LM), LSTM, etc.)
+- MIDI music generation using a combination of architectures ([RWKV](https://github.com/BlinkDL/RWKV-LM), [VAE](https://en.wikipedia.org/wiki/Variational_autoencoder), etc.)
 - Fine-tune or generate a new model from scratch using a custom dataset 
 - Instrument based sequence training and generation (drums, bass, etc.)
-- Pre-trained embeddings using a Variational Autoencoder ([@WIP](https://github.com/webpolis/musai/wiki/Experimental))
+- Pre-trained embeddings using a Variational Autoencoder ([Experimental](https://github.com/webpolis/musai/wiki/Experimental))
 - Adjustable parameters to customize the style and complexity of the generated music
 - High-quality output MIDI files for further refinement or direct use in your projects
 - Seamless integration with your favorite music production tools via VST bridge (@WIP)
@@ -80,6 +80,14 @@ CLASS | NAME
 
 ### [Trainer](src/tools/trainer.py)
 
+### (optional) Embeddings
+
+> Additionally, you can choose to use a VAE encoder in replacement of the default architecture's embedding module ([read more](https://github.com/webpolis/musai/wiki/Experimental)).
+
+> There is an extra cost on training time if you choose to build the VAE embeddings from scratch (using `--vae_emb true`) so it is recommended to train the embeddings beforehand (see [example](notebooks/vae.ipynb)), but make sure you use the same values for the embeddings and vocabulary size when building the final model.
+
+> Training the final model using pre-trained embeddings (`--vae_emb path_to_pth_file`) will **save** significant _VRAM_.
+
 ```sh
 usage: trainer.py [-h] [-t TOKENS_PATH] [-o OUTPUT_PATH] [-m BASE_MODEL] [-r LORA_CKPT] [-c CTX_LEN]
                   [-b BATCHES_NUM] [-e EMBED_NUM] [-n LAYERS_NUM] [-p EPOCHS_NUM] [-s STEPS_NUM] [-i LR_RATE]
@@ -92,11 +100,11 @@ options:
   -x, --binidx          Dataset is in binidx format (Generated via https://github.com/Abel2076/json2binidx_tool) 
   -o OUTPUT_PATH, --output_path OUTPUT_PATH
                         The output path were model binaries will be saved
-  -m BASE_MODEL, --base_model BASE_MODEL or true if training from scratch
+  -m BASE_MODEL, --base_model BASE_MODEL
                         Full path for base model/checkpoint
   -r LORA_CKPT, --lora_ckpt LORA_CKPT
                         Full path for LoRa checkpoint
-  -v VAE_EMB, --vae_emb VAE_EMB
+  -v VAE_EMB, --vae_emb VAE_EMB or true if training from scratch
                         The pre-trained VAE embeddings
   -c CTX_LEN, --ctx_len CTX_LEN
                         The context length
