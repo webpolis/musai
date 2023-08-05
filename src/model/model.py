@@ -523,7 +523,8 @@ class RWKV(pl.LightningModule):
         assert T <= args.ctx_len, 'Cannot forward, model ctx_len is exhausted.'
 
         if args.vae_emb != None:
-            _, x, _, _, _, _ = self.emb(idx)
+            with torch.no_grad():
+                _, x, _, _, _, _ = self.emb(idx)
         else:
             x = self.emb(idx)
 
