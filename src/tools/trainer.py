@@ -337,6 +337,7 @@ if __name__ == "__main__":
         os.environ["RWKV_JIT_ON"] = "0"
 
     from model import RWKV, LORA_CONFIG
+    from embed import HIDDEN_DIM, LATENT_DIM
 
     try:
         # seed
@@ -395,7 +396,13 @@ if __name__ == "__main__":
             'strategy': 'deepspeed_stage_2_offload',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
-            'vae_emb': os.path.abspath(args.vae_emb) if args.vae_emb != None else None,
+            'vae_emb': {
+                'enabled': args.vae_emb != None,
+                'hidden_dim': HIDDEN_DIM,
+                'latent_dim': LATENT_DIM,
+                'base_model': os.path.abspath(args.vae_emb) if args.vae_emb != None \
+                    and args.vae_emb != 'true' else None,
+            },
             'vocab_size': vocab_size,
             'wandb': '',
             'warmup_steps': 10,

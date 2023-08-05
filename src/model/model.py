@@ -426,8 +426,14 @@ class RWKV(pl.LightningModule):
         if not hasattr(args, 'tiny_att_dim'):
             args.tiny_att_dim = -1
 
-        if args.vae_emb != None:
-            self.emb = VAE.from_pretrained(args.vae_emb)
+        if args.vae_emb != None and args.vae_emb['enabled']:
+            if args.vae_emb['base_model'] != None:
+                self.emb = VAE.from_pretrained(args.vae_emb['base_model'])
+            else:
+                latent_dim = args.vae_emb['latent_dim']
+                hidden_dim = args.vae_emb['hidden_dim']
+                self.emb = VAE(latent_dim, hidden_dims=[
+                               hidden_dim*4, hidden_dim*2, hidden_dim, hidden_dim//2])
         else:
             self.emb = nn.Embedding(
                 args.vocab_size, args.n_embd, padding_idx=args.padding_idx)
@@ -522,8 +528,11 @@ class RWKV(pl.LightningModule):
         B, T = idx.size()
         assert T <= args.ctx_len, 'Cannot forward, model ctx_len is exhausted.'
 
-        if args.vae_emb != None:
-            with torch.no_grad():
+        if args.vae_emb != None and args.vae_emb['enabled']:
+            if args.vae_emb['base_model'] != None:
+                with torch.no_grad():
+                    _, x, _, _, _, _ = self.emb(idx)
+            else:
                 _, x, _, _, _, _ = self.emb(idx)
         else:
             x = self.emb(idx)
@@ -595,6 +604,10 @@ class RWKV(pl.LightningModule):
                     logits.view(-1, logits.size(-1)), targets.view(-1), reduction='none')
                 # loss_raw = loss
                 loss = torch.sum(loss * mask) / sum_mask
+
+        if args.vae_emb != None and args.vae_emb['enabled']:
+            if args.vae_emb['base_model'] is None:
+                loss += self.emb.training_step(batch, batch_idx)
 
         return L2Wrap.apply(loss, logits)
 
