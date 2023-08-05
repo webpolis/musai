@@ -295,8 +295,8 @@ if __name__ == "__main__":
                             help='Full path for base model/checkpoint', type=str)
     arg_parser.add_argument('-r', '--lora_ckpt', default=None,
                             help='Full path for LoRa checkpoint', type=str)
-    arg_parser.add_argument('-k', '--model_ckpt', default=None,
-                            help='Full path for model checkpoint', type=str)
+    arg_parser.add_argument('-v', '--vae_emb', default=None,
+                            help='The pre-trained VAE embeddings', type=str)
     arg_parser.add_argument(
         '-c', '--ctx_len', default=CTX_LEN, help='The context length', type=int)
     arg_parser.add_argument(
@@ -306,7 +306,7 @@ if __name__ == "__main__":
     arg_parser.add_argument(
         '-n', '--layers_num', default=N_LAYER, help='Number of block layers', type=int)
     arg_parser.add_argument(
-                    '-f', '--epochs_first', default=0, help='Initial epoch', type=int)
+        '-f', '--epochs_first', default=0, help='Initial epoch', type=int)
     arg_parser.add_argument(
         '-p', '--epochs_num', default=EPOCHS, help='Number of epochs', type=int)
     arg_parser.add_argument(
@@ -395,6 +395,7 @@ if __name__ == "__main__":
             'strategy': 'deepspeed_stage_2_offload',
             'tiny_att_dim': -1 if not args.attention else args.ctx_len,
             'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
+            'vae_emb': os.path.abspath(args.vae_emb) if args.vae_emb != None else None,
             'vocab_size': vocab_size,
             'wandb': '',
             'warmup_steps': 10,
@@ -470,19 +471,6 @@ if __name__ == "__main__":
 
                     model_base.load_state_dict(torch.load(
                         args.lora_ckpt, map_location='cpu'), strict=False)
-                elif args.model_ckpt != None:
-                    # Merge base model with checkpoint's state
-                    logger.info(f'Preloading checkpoint {args.model_ckpt}')
-
-                    w_main: Dict[str, torch.Tensor] = model_base.state_dict()
-                    w_ckpt: Dict[str, torch.Tensor] = torch.load(
-                        args.model_ckpt, map_location='cpu')
-
-                    for k in w_ckpt.keys():
-                        w_main[k] = w_ckpt[k].clone() if len(
-                            w_ckpt[k]) != 0 else w_main[k]
-
-                    model_base.load_state_dict(w_main)
             except Exception as error:
                 logger.error(error)
 

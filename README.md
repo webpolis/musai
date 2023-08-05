@@ -96,8 +96,8 @@ options:
                         Full path for base model/checkpoint
   -r LORA_CKPT, --lora_ckpt LORA_CKPT
                         Full path for LoRa checkpoint
-  -k MODEL_CKPT, --model_ckpt MODEL_CKPT
-                        Full path for model checkpoint
+  -v VAE_EMB, --vae_emb_ckpt MODEL_CKPT
+                        The pre-trained VAE embeddings
   -c CTX_LEN, --ctx_len CTX_LEN
                         The context length
   -b BATCHES_NUM, --batches_num BATCHES_NUM
