@@ -95,10 +95,12 @@ class VAE(pl.LightningModule):
 
     def __init__(self,
                  latent_dim: int,
-                 hidden_dims: List = [HIDDEN_DIM]
+                 hidden_dims: List = [HIDDEN_DIM],
+                 logging: bool = True
                  ) -> None:
         super(VAE, self).__init__()
 
+        self.logging = logging
         self.latent_dim = latent_dim
         self.emb = nn.Embedding(VOCAB_SIZE, EMBED_DIM, padding_idx=0)
         self.encoder = Encoder(hidden_dims, latent_dim)
@@ -211,7 +213,8 @@ class VAE(pl.LightningModule):
             mean, log_var, padding_index=0
         )
 
-        self.log('train_loss', loss, prog_bar=True, on_step=True)
+        if self.logging:
+            self.log('train_loss', loss, prog_bar=True, on_step=True)
 
         return loss
 
