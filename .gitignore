@@ -5,3 +5,4 @@ lightning_logs/
 *.log
 out/
 wandb/
+embvae*.txt
