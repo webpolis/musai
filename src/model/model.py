@@ -538,9 +538,17 @@ class RWKV(pl.LightningModule):
         if args.vae_emb != None and args.vae_emb['enabled']:
             if args.vae_emb['base_model'] != None:
                 with torch.no_grad():
-                    _, x, _, _, _, _ = self.emb(idx)
+                    output, x, emb, hidden, mean, logvar = self.emb(idx)
             else:
-                _, x, _, _, _, _ = self.emb(idx)
+                output, x, emb, hidden, mean, logvar = self.emb(idx)
+
+            self.register_buffer('emb_input', idx.clone(), persistent=False)
+            self.register_buffer('emb_output', output, persistent=False)
+            self.register_buffer('emb_hat', x.clone(), persistent=False)
+            self.register_buffer('emb_orig', emb, persistent=False)
+            self.register_buffer('emb_hidden', hidden, persistent=False)
+            self.register_buffer('emb_mean', mean, persistent=False)
+            self.register_buffer('emb_var', logvar, persistent=False)
         else:
             x = self.emb(idx)
 
@@ -614,7 +622,15 @@ class RWKV(pl.LightningModule):
 
         if args.vae_emb != None and args.vae_emb['enabled']:
             if args.vae_emb['base_model'] is None:
-                loss += self.emb.training_step(batch, batch_idx)
+                loss += (self.emb.loss_function(
+                    self.emb_orig,
+                    self.emb_hat,
+                    self.emb_input,
+                    self.emb_output,
+                    self.emb_mean,
+                    self.emb_var,
+                    padding_index=0
+                )) / 1000 # scale down
 
         return L2Wrap.apply(loss, logits)
 
