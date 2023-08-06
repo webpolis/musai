@@ -165,7 +165,7 @@ Check out the [examples](examples/) folder.
 
 ## Text Generation
 
-The set of tools included in Musai can be easily switched for training a Large Language Model (LLM) or a Text Generation model of any size. Just provide the corresponding dataset processed with the [binidx](https://github.com/Abel2076/json2binidx_tool) and follow the given instructions.
+The trainer tool and model included in Musai can be easily reused for training a Large Language Model (LLM) or a Text Generation model of any size. Just provide the corresponding dataset processed with the [binidx](https://github.com/Abel2076/json2binidx_tool) and follow the given instructions.
 
 ## Contributing
 
