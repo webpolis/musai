@@ -529,7 +529,6 @@ if __name__ == "__main__":
                     params_obj.vae_emb['embed_dim'],
                     params_obj.vae_emb['latent_dim'],
                     [HIDDEN_DIM*4, HIDDEN_DIM*2, HIDDEN_DIM, HIDDEN_DIM//2],
-                    params_obj.vae_emb['hidden_dim'],
                     params_obj.vae_emb['vocab_size'],
                 )
 
