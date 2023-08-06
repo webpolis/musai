@@ -512,13 +512,26 @@ if __name__ == "__main__":
             # train the VAE model (embeddings) alone
             logger.info('Setting up trainer for embeddings model...')
 
+            HIDDEN_DIM = params_obj.vae_emb['hidden_dim']
+
             if VAE_FILE != None:
                 logger.info(f'Preloading embeddings from {VAE_FILE}...')
 
-                emb_model = VAE.from_pretrained(VAE_FILE)
+                emb_model = VAE.from_pretrained(
+                    VAE_FILE,
+                    params_obj.vae_emb['vocab_size'],
+                    params_obj.vae_emb['embed_dim'],
+                    params_obj.vae_emb['latent_dim'],
+                    HIDDEN_DIM,
+                )
             else:
-                emb_model = VAE(LATENT_DIM, hidden_dims=[
-                                HIDDEN_DIM*4, HIDDEN_DIM*2, HIDDEN_DIM, HIDDEN_DIM//2])
+                emb_model = VAE(
+                    params_obj.vae_emb['embed_dim'],
+                    params_obj.vae_emb['latent_dim'],
+                    [HIDDEN_DIM*4, HIDDEN_DIM*2, HIDDEN_DIM, HIDDEN_DIM//2],
+                    params_obj.vae_emb['hidden_dim'],
+                    params_obj.vae_emb['vocab_size'],
+                )
 
             # begin training
             logger.info('Begin training the embeddings model...')

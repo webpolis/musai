@@ -98,11 +98,9 @@ class VAE(pl.LightningModule):
                  latent_dim: int = LATENT_DIM,
                  hidden_dims: List = [HIDDEN_DIM],
                  vocab_size: int = VOCAB_SIZE,
-                 logging: bool = True
                  ) -> None:
         super(VAE, self).__init__()
 
-        self.logging = logging
         self.latent_dim = latent_dim
         self.vocab_size = vocab_size
         self.emb = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
