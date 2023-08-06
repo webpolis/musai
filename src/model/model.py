@@ -381,10 +381,10 @@ class Block(nn.Module):
             x = x + self.ffnPre(self.ln1(x))
         else:
             x = x + self.att(self.ln1(x)) if not has_dropout else \
-                x + self.dropout(self.att(self.ln1(x)))
+                self.dropout(x + self.att(self.ln1(x)))
 
         x = x + self.ffn(self.ln2(x)) if not has_dropout else \
-            x + self.dropout(self.ffn(self.ln2(x)))
+            self.dropout(x + self.ffn(self.ln2(x)))
 
         if args.tiny_att_dim > 0 and self.layer_id == args.tiny_att_layer:
             xx = self.tiny_ln(x)
