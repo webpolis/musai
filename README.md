@@ -82,9 +82,9 @@ CLASS | NAME
 
 ### (optional) Embeddings
 
-> Additionally, you can choose to use a VAE encoder in replacement of the default architecture's embedding module ([read more](https://github.com/webpolis/musai/wiki/Experimental)).
+> Additionally, you can choose to use a VAE model in replacement of the default architecture's embedding module ([read more](https://github.com/webpolis/musai/wiki/Experimental)).
 
-> There is an extra cost on training time if you choose to build the VAE embeddings from scratch (using `--vae_emb true`) so it is recommended to train the embeddings beforehand (see [example](notebooks/vae.ipynb)), but make sure you use the same values for the embeddings and vocabulary size when building the final model.
+> There is an extra cost on training time if you choose to build the VAE embeddings from scratch (using `--vae_emb true`) so it is recommended to train the embeddings beforehand (see [example](notebooks/vae.ipynb)), but make sure you use the same values for the embeddings size (`--embed_num`) when building the final model.
 
 > Training the final model using pre-trained embeddings (`--vae_emb path_to_pth_file`) will **save** significant _VRAM_.
 
