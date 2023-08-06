@@ -27,8 +27,11 @@ The typical workflow is:
 
 ### [Tokenizer](src/tools/tokenizer.py)
 
+
+### Usage
+
 ```sh
-usage: tokenizer.py [-h] [-t TOKENS_PATH] [-m MIDIS_PATH] [-g MIDIS_GLOB] [-b] [-p] [-a {REMI,MMM}] [-c CLASSES]
+tokenizer.py [-h] [-t TOKENS_PATH] [-m MIDIS_PATH] [-g MIDIS_GLOB] [-b] [-p] [-a {REMI,MMM}] [-c CLASSES]
                     [-r CLASSES_REQ] [-l LENGTH] [-d]
 
 options:
@@ -88,8 +91,24 @@ CLASS | NAME
 
 > Training the final model using pre-trained embeddings (`--vae_emb path_to_pth_file`) will **save** significant _VRAM_.
 
+To train the embeddings alone from scratch, change the arguments to match your needs and run:
+
 ```sh
-usage: trainer.py [-h] [-t TOKENS_PATH] [-o OUTPUT_PATH] [-m BASE_MODEL] [-r LORA_CKPT] [-c CTX_LEN]
+python src/tools/trainer.py -t path_to_tokenized_dataset -o output_path -v train -e 768 -b 24 -p 20 -s 1000 -i 1e-5
+```
+
+The saved embedding model will be stored in the output path with a name such as `embvae_#.pth` where `#` is the epoch number. Afterwards, you can use that file as the pre-trained embeddings for training the main and final model, using a command similar to:
+
+```sh
+python src/tools/trainer.py -t path_to_tokenized_dataset -o output_path -v path_to_pretrained_embeddings.pth -e 768 -c 2048 -n 12 -b 24 -p 100 -s 1000 -i 1e-5 -g -q
+```
+
+You can avoid the first step and let the RWKV architecture train its own embeddings by removing the `-v` or `--vae_emb` option.
+
+### Usage
+
+```sh
+trainer.py [-h] [-t TOKENS_PATH] [-o OUTPUT_PATH] [-m BASE_MODEL] [-r LORA_CKPT] [-c CTX_LEN]
                   [-b BATCHES_NUM] [-e EMBED_NUM] [-n LAYERS_NUM] [-p EPOCHS_NUM] [-s STEPS_NUM] [-i LR_RATE]
                   [-d LR_DECAY] [-a] [-l] [-g]
 
@@ -104,8 +123,11 @@ options:
                         Full path for base model/checkpoint
   -r LORA_CKPT, --lora_ckpt LORA_CKPT
                         Full path for LoRa checkpoint
-  -v VAE_EMB, --vae_emb VAE_EMB or true if training from scratch
-                        The pre-trained VAE embeddings
+  -v VAE_EMB, --vae_emb VAE_EMB
+                        The pre-trained VAE embeddings. Possible options: 
+                        "train" for training alone, from scratch.
+                        "true" for training from scratch together with the main model (slow).
+                        "path_to_pretrained_embeddings.pth" to use existing embeddings model (fast).
   -c CTX_LEN, --ctx_len CTX_LEN
                         The context length
   -b BATCHES_NUM, --batches_num BATCHES_NUM

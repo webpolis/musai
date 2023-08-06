@@ -297,7 +297,9 @@ if __name__ == "__main__":
     arg_parser.add_argument('-r', '--lora_ckpt', default=None,
                             help='Full path for LoRa checkpoint', type=str)
     arg_parser.add_argument('-v', '--vae_emb', default=None,
-                            help='The pre-trained VAE embeddings', type=str)
+                            help='The pre-trained VAE embeddings. Possible options: "train" for training alone, \
+                                from scratch. "true" for training from scratch together with the main model (slow). \
+                                    "path_to_pretrained_embeddings.pth" to use existing embeddings model (faster).', type=str)
     arg_parser.add_argument(
         '-c', '--ctx_len', default=CTX_LEN, help='The context length', type=int)
     arg_parser.add_argument(
