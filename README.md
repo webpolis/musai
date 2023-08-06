@@ -4,7 +4,7 @@ MusAI is an innovative project that leverages the power of machine learning to g
 
 ## Features
 
-- Full-featured tokenizer using parallelization via Ray
+- Full-featured tokenizer using parallelization via [Ray](https://www.ray.io/)
 - MIDI music generation using a combination of architectures ([RWKV](https://github.com/BlinkDL/RWKV-LM), [VAE](https://en.wikipedia.org/wiki/Variational_autoencoder), etc.)
 - Fine-tune or generate a new model from scratch using a custom dataset 
 - Instrument based sequence training and generation (drums, bass, etc.)
