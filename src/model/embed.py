@@ -216,9 +216,6 @@ class VAE(pl.LightningModule):
             mean, log_var, padding_index=0
         )
 
-        if self.logging:
-            self.log('train_loss', loss, prog_bar=True, on_step=True)
-
         return loss
 
     def configure_optimizers(self):

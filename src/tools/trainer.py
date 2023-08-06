@@ -128,6 +128,7 @@ class TrainCallback(Callback):
     def __init__(self, args):
         super().__init__()
         self.args = args
+        self.prefix = 'embvae' if args.vae_emb['training'] else 'main'
 
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
         args = self.args
@@ -159,9 +160,9 @@ class TrainCallback(Callback):
 
         for param_group in trainer.optimizers[0].param_groups:
             if args.layerwise_lr > 0:
-                param_group["lr"] = lr * param_group["my_lr_scale"]
+                param_group['lr'] = lr * param_group['my_lr_scale']
             else:
-                param_group["lr"] = lr
+                param_group['lr'] = lr
 
         trainer.my_lr = lr
 
@@ -169,13 +170,14 @@ class TrainCallback(Callback):
             if trainer.is_global_zero:  # logging
                 trainer.my_loss_sum = 0
                 trainer.my_loss_count = 0
-                trainer.my_log = open(args.proj_dir + "/train_log.txt", "a")
+                trainer.my_log = open(
+                    args.proj_dir + f'/{self.prefix}_train_log.txt', 'a')
                 trainer.my_log.write(
-                    f"NEW RUN {args.my_timestamp}\n{self.args._asdict()}\n")
+                    f'NEW RUN {args.my_timestamp}\n{self.args._asdict()}\n')
 
                 try:
-                    logger.info(f"\n{trainer.strategy.config}\n")
-                    trainer.my_log.write(f"{trainer.strategy.config}\n")
+                    logger.info(f'\n{trainer.strategy.config}\n')
+                    trainer.my_log.write(f'{trainer.strategy.config}\n')
                 except:
                     pass
 
@@ -183,13 +185,13 @@ class TrainCallback(Callback):
 
                 if len(args.wandb) > 0:
                     try:
-                        logger.info("Login to wandb...")
+                        logger.info('Login to wandb...')
                         import wandb
 
                         wandb.init(
                             project=args.wandb,
-                            name=str(args.vocab_size) + "_" +
-                            str(args.n_layer) + "_" + args.my_timestamp,
+                            name=str(args.vocab_size) + '_' +
+                            str(args.n_layer) + '_' + args.my_timestamp,
                             config=args._asdict(),
                             save_code=False,
                         )
@@ -201,9 +203,7 @@ class TrainCallback(Callback):
         args = self.args
 
         if trainer.is_global_zero:  # logging
-            if not hasattr(trainer, 'my_loss_all'):
-                trainer.my_loss_all = pl_module.all_gather(outputs['loss'])
-
+            trainer.my_loss_all = pl_module.all_gather(outputs['loss'])
             t_now = time.time_ns()
             token_per_step = args.ctx_len * args.real_bsz
             real_step = trainer.global_step + args.epoch_begin * args.epoch_steps
@@ -212,9 +212,9 @@ class TrainCallback(Callback):
             try:
                 t_cost = (t_now - trainer.my_time_ns) / 1e9
                 kt_s = token_per_step / t_cost / 1000
-                self.log("REAL it/s", 1.0 / t_cost,
+                self.log('REAL it/s', 1.0 / t_cost,
                          prog_bar=True, on_step=True)
-                self.log("Kt/s", kt_s, prog_bar=True, on_step=True)
+                self.log('Kt/s', kt_s, prog_bar=True, on_step=True)
             except:
                 pass
 
@@ -224,15 +224,16 @@ class TrainCallback(Callback):
             trainer.my_loss_count += 1
             trainer.my_epoch_loss = trainer.my_loss_sum / trainer.my_loss_count
 
-            self.log("lr", trainer.my_lr, prog_bar=True, on_step=True)
-            self.log("loss", trainer.my_epoch_loss,
-                     prog_bar=True, on_step=True)
+            self.log('lr', trainer.my_lr, prog_bar=True, on_step=True)
+            self.log('loss', trainer.my_epoch_loss, prog_bar=True, on_step=True)
 
             if len(args.wandb) > 0:
-                lll = {"loss": trainer.my_loss, "lr": trainer.my_lr,
-                       "Gtokens": real_step * token_per_step / 1e9}
+                lll = {'loss': trainer.my_loss, 'lr': trainer.my_lr,
+                       'Gtokens': real_step * token_per_step / 1e9}
+
                 if kt_s > 0:
-                    lll["kt/s"] = kt_s
+                    lll['kt/s'] = kt_s
+
                 trainer.my_wandb.log(lll, step=int(real_step))
 
     def on_train_epoch_start(self, trainer, pl_module):
@@ -266,13 +267,13 @@ class TrainCallback(Callback):
                 try:
                     save_pth(
                         to_save_dict,
-                        f"{args.proj_dir}/rwkv-{args.epoch_begin + trainer.current_epoch}.pth",
+                        f'{args.proj_dir}/{self.prefix}_{args.epoch_begin + trainer.current_epoch}.pth',
                     )
                 except Exception as error:
                     logger.error(error)
 
             trainer.my_log.write(
-                f"{args.epoch_begin + trainer.current_epoch} {trainer.my_epoch_loss:.6f} {math.exp(trainer.my_epoch_loss):.4f} {trainer.my_lr:.8f} {datetime.datetime.now()} {trainer.current_epoch}\n")
+                f'{args.epoch_begin + trainer.current_epoch} {trainer.my_epoch_loss:.6f} {math.exp(trainer.my_epoch_loss):.4f} {trainer.my_lr:.8f} {datetime.datetime.now()} {trainer.current_epoch}\n')
             trainer.my_log.flush()
 
             trainer.my_loss_sum = 0
@@ -328,171 +329,112 @@ if __name__ == "__main__":
     if args.dataset_path == None:
         raise 'Invalid dataset path'
 
-    # initialize model
     os.environ['RWKV_T_MAX'] = str(args.ctx_len)
 
-    if args.lora and args.grad_cp:
-        logger.info(
-            '!!!!! LoRA Warning: Gradient Checkpointing requires JIT off, disabling it')
-        os.environ["RWKV_JIT_ON"] = "0"
-
     from model import RWKV, LORA_CONFIG
-    from embed import HIDDEN_DIM, LATENT_DIM
+    from embed import VAE, HIDDEN_DIM, LATENT_DIM
+
+    # seed
+    seed = random.randint(1000, 10000)
+    pl.seed_everything(seed)
+
+    # generate output dir
+    Path(args.output_path).mkdir(parents=True, exist_ok=True)
+    logger.info('Output dir setup.')
+
+    # construct dataset
+    logger.info('Initializing dataset...')
+
+    if not args.binidx:
+        midi_jsons = list(Path(args.dataset_path).glob('*.json'))
+        random.shuffle(midi_jsons)
+
+        # initialize tokenizer
+        TOKENIZER = get_tokenizer(params=f'{args.dataset_path}/{TOKEN_PARAMS_NAME}')
+        vocab_size = len(TOKENIZER)
+    else:
+        vocab_size = 65536
+
+    # build trainer/model params
+    params = {
+        'adam_eps': 1e-8,
+        'betas': (.9, .99),
+        'ctx_len': args.ctx_len,
+        'dim_att': args.embed_num,
+        'dim_ffn': args.embed_num*4,
+        'dropout_p': 0.1,
+        'epoch_begin': args.epochs_first,
+        'epoch_count': args.epochs_num,
+        'epoch_save': 1,
+        'epoch_steps': args.steps_num,
+        'grad_cp': 0 if not args.grad_cp else 1,
+        'gradient_clip_val': 1.0,
+        'head_qk': 0 if not args.head_qk else int(args.embed_num*2),
+        'layerwise_lr': 0,
+        'lora': args.lora,
+        'lora_params': LORA_CONFIG,
+        'lr_decay': float(args.lr_decay),
+        'lr_init': float(args.lr_rate),
+        'lr_final': float(args.lr_rate)/100,
+        'micro_bsz': args.batches_num,
+        'my_pile_stage': 0,
+        'my_pos_emb': 0,
+        'my_qa_mask': 0,
+        'my_timestamp': datetime.datetime.today().strftime("%Y-%m-%d-%H-%M-%S"),
+        'n_embd': args.embed_num,
+        'n_layer': args.layers_num,
+        'padding_idx': 0,
+        'pre_ffn': 0,
+        'proj_dir': args.output_path,
+        'real_bsz':  args.batches_num,
+        'strategy': 'deepspeed_stage_2_offload',
+        'tiny_att_dim': -1 if not args.attention else args.ctx_len,
+        'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
+        'vae_emb': {
+            'enabled': args.vae_emb != None,
+            'training': args.vae_emb == 'train',
+            'embed_dim': args.embed_num,
+            'hidden_dim': HIDDEN_DIM,
+            'latent_dim': LATENT_DIM,
+            'base_model': os.path.abspath(args.vae_emb) if args.vae_emb != None
+            and args.vae_emb != 'true' and args.vae_emb != 'train' else None,
+        },
+        'vocab_size': vocab_size,
+        'wandb': '',
+        'warmup_steps': 10,
+    }
+
+    logger.info(params)
+
+    # instantiate dataset
+    if not args.binidx:
+        DATASET = MIDIDataset(
+            files_paths=midi_jsons,
+            min_seq_len=16,
+            max_seq_len=args.ctx_len,
+            no_labels=False,
+            tokenizer=TOKENIZER,
+            batches=args.batches_num,
+            epoch_steps=args.steps_num
+        )
+        params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+    else:
+        params['data_type'] = 'binidx'
+        params['data_file'] = args.dataset_path
+        params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
+        DATASET = RegularDataset(params_obj)
+
+    # extra embeddings metadata
+    if not args.binidx:
+        params_obj.vae_emb['vocab_size'] = len(TOKENIZER)
+
+    logger.info('Loading data...')
+    data_loader = DataLoader(DATASET, shuffle=False, pin_memory=True,
+                             batch_size=params_obj.micro_bsz, num_workers=cpu_count(), persistent_workers=False, drop_last=True)
+    TRAIN_CALLBACK = TrainCallback(params_obj)
 
     try:
-        # seed
-        seed = random.randint(1000, 10000)
-        pl.seed_everything(seed)
-
-        # generate output dir
-        Path(args.output_path).mkdir(parents=True, exist_ok=True)
-        logger.info('Output dir setup.')
-
-        # construct dataset
-        logger.info('Initializing dataset...')
-
-        if not args.binidx:
-            midi_jsons = list(Path(args.dataset_path).glob('*.json'))
-            random.shuffle(midi_jsons)
-
-            # initialize tokenizer
-            TOKENIZER = get_tokenizer(params=f'{args.dataset_path}/{TOKEN_PARAMS_NAME}')
-            vocab_size = len(TOKENIZER)
-        else:
-            vocab_size = 65536
-
-        # build trainer/model params
-        params = {
-            'adam_eps': 1e-8,
-            'betas': (.9, .99),
-            'ctx_len': args.ctx_len,
-            'dim_att': args.embed_num,
-            'dim_ffn': args.embed_num*4,
-            'dropout_p': 0.1,
-            'epoch_begin': args.epochs_first,
-            'epoch_count': args.epochs_num,
-            'epoch_save': 1,
-            'epoch_steps': args.steps_num,
-            'grad_cp': 0 if not args.grad_cp else 1,
-            'gradient_clip_val': 1.0,
-            'head_qk': 0 if not args.head_qk else int(args.embed_num*2),
-            'layerwise_lr': 0,
-            'lora': args.lora,
-            'lora_params': LORA_CONFIG,
-            'lr_decay': float(args.lr_decay),
-            'lr_init': float(args.lr_rate),
-            'lr_final': float(args.lr_rate)/100,
-            'micro_bsz': args.batches_num,
-            'my_pile_stage': 0,
-            'my_pos_emb': 0,
-            'my_qa_mask': 0,
-            'my_timestamp': datetime.datetime.today().strftime("%Y-%m-%d-%H-%M-%S"),
-            'n_embd': args.embed_num,
-            'n_layer': args.layers_num,
-            'padding_idx': 0,
-            'pre_ffn': 0,
-            'proj_dir': args.output_path,
-            'real_bsz':  args.batches_num,
-            'strategy': 'deepspeed_stage_2_offload',
-            'tiny_att_dim': -1 if not args.attention else args.ctx_len,
-            'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
-            'vae_emb': {
-                'enabled': args.vae_emb != None,
-                'embed_dim': args.embed_num,
-                'hidden_dim': HIDDEN_DIM,
-                'latent_dim': LATENT_DIM,
-                'base_model': os.path.abspath(args.vae_emb) if args.vae_emb != None
-                and args.vae_emb != 'true' else None,
-            },
-            'vocab_size': vocab_size,
-            'wandb': '',
-            'warmup_steps': 10,
-        }
-
-        logger.info(params)
-
-        # instantiate dataset
-        if not args.binidx:
-            DATASET = MIDIDataset(
-                files_paths=midi_jsons,
-                min_seq_len=16,
-                max_seq_len=args.ctx_len,
-                no_labels=False,
-                tokenizer=TOKENIZER,
-                batches=args.batches_num,
-                epoch_steps=args.steps_num
-            )
-            params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
-        else:
-            params['data_type'] = 'binidx'
-            params['data_file'] = args.dataset_path
-            params_obj = namedtuple('RWKVParams', params.keys())(*params.values())
-            DATASET = RegularDataset(params_obj)
-
-        # extra embeddings metadata
-        if not args.binidx:
-            params_obj.vae_emb['vocab_size'] = len(TOKENIZER)
-
-        model_base = RWKV(params_obj)
-
-        logger.info('Setting up trainer...')
-
-        # LoRa customization
-        if params_obj.lora:
-            logger.info('LoRa enabled: preparing modules...')
-
-            enable_time_finetune = 'time' in params_obj.lora_params['parts']
-            enable_ln_finetune = 'ln' in params_obj.lora_params['parts']
-
-            model_base.requires_grad_(False)
-
-            for name, module in model_base.named_modules():
-                # have to check param name since it may have been wrapped by torchscript
-                if any(n.startswith("lora_") for n, _ in module.named_parameters()):
-                    logger.debug(f'LoRA training module {name}')
-                    for pname, param in module.named_parameters():
-                        param.requires_grad = 'lora_' in pname
-                elif enable_ln_finetune and '.ln' in name:
-                    logger.debug(f'LoRA additionally training module {name}')
-                    for param in module.parameters():
-                        param.requires_grad = True
-                elif enable_time_finetune and any(n.startswith("time") for n, _ in module.named_parameters()):
-                    for pname, param in module.named_parameters():
-                        if pname.startswith("time"):
-                            logger.debug(
-                                f'LoRA additionally training parameter {pname}')
-                            param.requires_grad = True
-
-        # Checkpoint preload
-        if args.base_model != None and os.path.isfile(args.base_model):
-            try:
-                logger.info(f'Preloading {args.base_model}')
-                load_dict = torch.load(args.base_model, map_location='cpu')
-                load_keys = load_dict.keys()
-
-                for k in model_base.state_dict():
-                    if k not in load_keys:
-                        load_dict[k] = model_base.state_dict()[k]
-
-                # If using LoRA, the LoRA keys might be missing in the original model
-                model_base.load_state_dict(load_dict, strict=(not args.lora))
-
-                if args.lora and args.lora_ckpt != None \
-                        and os.path.isfile(args.lora_ckpt):
-                    logger.info(f'Preloading LoRa checkpoint {args.lora_ckpt}')
-
-                    model_base.load_state_dict(torch.load(
-                        args.lora_ckpt, map_location='cpu'), strict=False)
-            except Exception as error:
-                logger.error(error)
-
-        logger.info('Model initialized')
-
         # prepare for training
-        logger.info('Loading data...')
-        data_loader = DataLoader(DATASET, shuffle=False, pin_memory=True,
-                                 batch_size=params_obj.micro_bsz, num_workers=cpu_count(), persistent_workers=False, drop_last=True)
-        TRAIN_CALLBACK = TrainCallback(params_obj)
         DEEPSPEED_CONFIG = {
             'optimizer': {
                 'type': 'Adam',
@@ -550,8 +492,80 @@ if __name__ == "__main__":
         }
         trainer_pl = pl.Trainer(**trainer_params)
 
-        # begin training
-        logger.info('Begin training...')
-        trainer_pl.fit(model_base, data_loader)
+        if args.vae_emb == 'train':
+            # train the VAE model (embeddings) alone
+            logger.info('Setting up trainer for embeddings model...')
+
+            emb_model = VAE(LATENT_DIM, hidden_dims=[
+                            HIDDEN_DIM*4, HIDDEN_DIM*2, HIDDEN_DIM, HIDDEN_DIM//2])
+
+            # begin training
+            logger.info('Begin training the embeddings model...')
+            trainer_pl.fit(emb_model, data_loader)
+        else:
+            # train the main model
+            if args.lora and args.grad_cp:
+                logger.info(
+                    'LoRA Warning: Gradient Checkpointing requires JIT off, disabling it')
+                os.environ["RWKV_JIT_ON"] = "0"
+
+            model_base = RWKV(params_obj)
+
+            logger.info('Setting up trainer for main model...')
+
+            # LoRa customization
+            if params_obj.lora:
+                logger.info('LoRa enabled: preparing modules...')
+
+                enable_time_finetune = 'time' in params_obj.lora_params['parts']
+                enable_ln_finetune = 'ln' in params_obj.lora_params['parts']
+
+                model_base.requires_grad_(False)
+
+                for name, module in model_base.named_modules():
+                    # have to check param name since it may have been wrapped by torchscript
+                    if any(n.startswith("lora_") for n, _ in module.named_parameters()):
+                        logger.debug(f'LoRA training module {name}')
+                        for pname, param in module.named_parameters():
+                            param.requires_grad = 'lora_' in pname
+                    elif enable_ln_finetune and '.ln' in name:
+                        logger.debug(f'LoRA additionally training module {name}')
+                        for param in module.parameters():
+                            param.requires_grad = True
+                    elif enable_time_finetune and any(n.startswith("time") for n, _ in module.named_parameters()):
+                        for pname, param in module.named_parameters():
+                            if pname.startswith("time"):
+                                logger.debug(
+                                    f'LoRA additionally training parameter {pname}')
+                                param.requires_grad = True
+
+            # Checkpoint preload
+            if args.base_model != None and os.path.isfile(args.base_model):
+                try:
+                    logger.info(f'Preloading {args.base_model}')
+                    load_dict = torch.load(args.base_model, map_location='cpu')
+                    load_keys = load_dict.keys()
+
+                    for k in model_base.state_dict():
+                        if k not in load_keys:
+                            load_dict[k] = model_base.state_dict()[k]
+
+                    # If using LoRA, the LoRA keys might be missing in the original model
+                    model_base.load_state_dict(load_dict, strict=(not args.lora))
+
+                    if args.lora and args.lora_ckpt != None \
+                            and os.path.isfile(args.lora_ckpt):
+                        logger.info(f'Preloading LoRa checkpoint {args.lora_ckpt}')
+
+                        model_base.load_state_dict(torch.load(
+                            args.lora_ckpt, map_location='cpu'), strict=False)
+                except Exception as error:
+                    logger.error(error)
+
+            logger.info('Model initialized')
+
+            # begin training
+            logger.info('Begin training the main model...')
+            trainer_pl.fit(model_base, data_loader)
     except KeyboardInterrupt:
         sys.exit(1)
