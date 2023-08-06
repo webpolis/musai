@@ -427,13 +427,20 @@ class RWKV(pl.LightningModule):
             args.tiny_att_dim = -1
 
         if args.vae_emb != None and args.vae_emb['enabled']:
+            embed_dim = args.vae_emb['embed_dim']
+            latent_dim = args.vae_emb['latent_dim']
+            hidden_dim = args.vae_emb['hidden_dim']
+            vocab_size = args.vae_emb['vocab_size']
+
             if args.vae_emb['base_model'] != None:
-                self.emb = VAE.from_pretrained(args.vae_emb['base_model'])
+                self.emb = VAE.from_pretrained(
+                    args.vae_emb['base_model'],
+                    vocab_size,
+                    embed_dim,
+                    latent_dim,
+                    hidden_dim
+                )
             else:
-                embed_dim = args.vae_emb['embed_dim']
-                latent_dim = args.vae_emb['latent_dim']
-                hidden_dim = args.vae_emb['hidden_dim']
-                vocab_size = args.vae_emb['vocab_size']
                 self.emb = VAE(
                     embed_dim,
                     latent_dim,
@@ -630,7 +637,7 @@ class RWKV(pl.LightningModule):
                     self.emb_mean,
                     self.emb_var,
                     padding_index=0
-                )) / 1000 # scale down
+                )) / 1000  # scale down
 
         return L2Wrap.apply(loss, logits)
 
