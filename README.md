@@ -120,9 +120,9 @@ options:
   -o OUTPUT_PATH, --output_path OUTPUT_PATH
                         The output path were model binaries will be saved
   -m BASE_MODEL, --base_model BASE_MODEL
-                        Full path for base model/checkpoint
+                        Full path for base model/checkpoint (*)
   -r LORA_CKPT, --lora_ckpt LORA_CKPT
-                        Full path for LoRa checkpoint
+                        Full path for LoRa checkpoint (*)
   -v VAE_EMB, --vae_emb VAE_EMB
                         The pre-trained VAE embeddings. Possible options: 
                         "train" for training alone, from scratch.
@@ -136,7 +136,7 @@ options:
   -e EMBED_NUM, --embed_num EMBED_NUM
                         Size of the embeddings dimension
   -n LAYERS_NUM, --layers_num LAYERS_NUM
-                        Number of block layers
+                        Number of block layers (*)
   -p EPOCHS_NUM, --epochs_num EPOCHS_NUM
                         Number of epochs
   -s STEPS_NUM, --steps_num STEPS_NUM
@@ -145,19 +145,27 @@ options:
                         Learning rate. Initial & final derivates from it.
   -d LR_DECAY, --lr_decay LR_DECAY
                         Learning rate decay thru steps
-  -a, --attention       Enable tiny attention
-  -l, --lora            Activate LoRa (Low-Rank Adaptation)
-  -g, --grad_cp         Gradient checkpointing
-  -q, --head_qk         Enable head QK
+  -a, --attention       Enable tiny attention (*)
+  -l, --lora            Activate LoRa (Low-Rank Adaptation) (*)
+  -g, --grad_cp         Gradient checkpointing (*)
+  -q, --head_qk         Enable head QK (*)
 
 ```
 
-### Runner (WIP)
+_* Only used when training the main model._
+
+### Runner
+
+(@WIP)
 
 
 ## Examples
 
 Check out the [examples](examples/) folder.
+
+## Text Generation
+
+The set of tools included in Musai can be easily switched for training a Large Language Model (LLM) or a Text Generation model of any size. Just provide the corresponding dataset processed with the [binidx](https://github.com/Abel2076/json2binidx_tool) and follow the given instructions.
 
 ## Contributing
 
