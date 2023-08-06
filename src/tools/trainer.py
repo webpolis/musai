@@ -296,7 +296,7 @@ if __name__ == "__main__":
                             help='Full path for base model/checkpoint', type=str)
     arg_parser.add_argument('-r', '--lora_ckpt', default=None,
                             help='Full path for LoRa checkpoint', type=str)
-    arg_parser.add_argument('-v', '--vae_emb', default=None,
+    arg_parser.add_argument('-v', '--vae_emb', default=None, nargs='*',
                             help='The pre-trained VAE embeddings. Possible options: "train" for training alone, \
                                 from scratch. "true" for training from scratch together with the main model (slow). \
                                     "path_to_pretrained_embeddings.pth" to use existing embeddings model (faster).', type=str)
@@ -357,6 +357,21 @@ if __name__ == "__main__":
     else:
         vocab_size = 65536
 
+    # parse VAE params
+    VAE_MODE = args.vae_emb[0] if args.vae_emb != None else None
+    VAE_FILE = (
+        VAE_MODE if (
+            VAE_MODE != None and VAE_MODE != 'true' and VAE_MODE != 'train'
+            and os.path.isfile(VAE_MODE)
+        ) else
+        args.vae_emb[1] if
+        (
+            len(args.vae_emb) > 1 and VAE_MODE == 'train' and os.path.isfile(
+                args.vae_emb[1])
+        ) else
+        None
+    )
+
     # build trainer/model params
     params = {
         'adam_eps': 1e-8,
@@ -393,13 +408,12 @@ if __name__ == "__main__":
         'tiny_att_dim': -1 if not args.attention else args.ctx_len,
         'tiny_att_layer': -1 if not args.attention else int(args.layers_num) - 1,
         'vae_emb': {
-            'enabled': args.vae_emb != None,
-            'training': args.vae_emb == 'train',
+            'enabled': VAE_MODE != None,
+            'training': VAE_MODE == 'train',
             'embed_dim': args.embed_num,
             'hidden_dim': HIDDEN_DIM,
             'latent_dim': LATENT_DIM,
-            'base_model': os.path.abspath(args.vae_emb) if args.vae_emb != None
-            and args.vae_emb != 'true' and args.vae_emb != 'train' else None,
+            'base_model': VAE_FILE,
         },
         'vocab_size': vocab_size,
         'wandb': '',
@@ -494,12 +508,17 @@ if __name__ == "__main__":
         }
         trainer_pl = pl.Trainer(**trainer_params)
 
-        if args.vae_emb == 'train':
+        if VAE_MODE == 'train':
             # train the VAE model (embeddings) alone
             logger.info('Setting up trainer for embeddings model...')
 
-            emb_model = VAE(LATENT_DIM, hidden_dims=[
-                            HIDDEN_DIM*4, HIDDEN_DIM*2, HIDDEN_DIM, HIDDEN_DIM//2])
+            if VAE_FILE != None:
+                logger.info(f'Preloading embeddings from {VAE_FILE}...')
+
+                emb_model = VAE.from_pretrained(VAE_FILE)
+            else:
+                emb_model = VAE(LATENT_DIM, hidden_dims=[
+                                HIDDEN_DIM*4, HIDDEN_DIM*2, HIDDEN_DIM, HIDDEN_DIM//2])
 
             # begin training
             logger.info('Begin training the embeddings model...')

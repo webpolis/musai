@@ -126,8 +126,9 @@ options:
   -v VAE_EMB, --vae_emb VAE_EMB
                         The pre-trained VAE embeddings. Possible options: 
                         "train" for training alone, from scratch.
+                        "train path_to_existing_embeddings.pth" for training alone, from saved model.
                         "true" for training from scratch together with the main model (slow).
-                        "path_to_pretrained_embeddings.pth" to use existing embeddings model (fast).
+                        "path_to_existing_embeddings.pth" to use existing embeddings model while training main model (fast).
   -c CTX_LEN, --ctx_len CTX_LEN
                         The context length
   -b BATCHES_NUM, --batches_num BATCHES_NUM
