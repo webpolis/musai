@@ -9,6 +9,7 @@ from torch.utils.cpp_extension import load
 from torch.nn import functional as F
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 from lightning.pytorch.strategies import DeepSpeedStrategy
+from loguru import logger
 from embed import VAE
 
 if importlib.util.find_spec('deepspeed'):
@@ -433,6 +434,9 @@ class RWKV(pl.LightningModule):
             vocab_size = args.vae_emb['vocab_size']
 
             if args.vae_emb['base_model'] != None:
+                logger.info(
+                    f"Preloading embeddings from {args.vae_emb['base_model']}...")
+
                 self.emb = VAE.from_pretrained(
                     args.vae_emb['base_model'],
                     vocab_size,
