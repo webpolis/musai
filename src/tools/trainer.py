@@ -477,7 +477,7 @@ if __name__ == "__main__":
         }
         trainer_pl = pl.Trainer(**trainer_params)
 
-        if VAE_MODE == 'train':
+        if params_obj.vae_emb['enabled'] and params_obj.vae_emb['training']:
             # train the VAE model (embeddings) alone
             logger.info('Setting up trainer for embeddings model...')
 
