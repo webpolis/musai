@@ -291,7 +291,7 @@ if __name__ == "__main__":
                             action='store_true', default=False)
     arg_parser.add_argument('-l', '--lora', help='Activate LoRa (Low-Rank Adaptation)',
                             action='store_true', default=False)
-    arg_parser.add_argument('-g', '--grad_cp', help='Gradient checkpointing',
+    arg_parser.add_argument('-f', '--offload', help='DeepSpeed offload',
                             action='store_true', default=False)
     arg_parser.add_argument('-q', '--head_qk', help='Enable head QK',
                             action='store_true', default=False)
@@ -353,7 +353,7 @@ if __name__ == "__main__":
         'epoch_count': args.epochs_num,
         'epoch_save': 1,
         'epoch_steps': args.steps_num,
-        'grad_cp': 0 if not args.grad_cp else 1,
+        'grad_cp': 0 if not args.offload else 1,
         'gradient_clip_val': 1.0,
         'head_qk': 0 if not args.head_qk else int(args.embed_num*2),
         'layerwise_lr': 0,
@@ -420,50 +420,6 @@ if __name__ == "__main__":
 
     try:
         # prepare for training
-        DEEPSPEED_CONFIG = {
-            'optimizer': {
-                'type': 'Adam',
-                'params': {
-                    'lr': params_obj.lr_init,
-                    'betas': params_obj.betas,
-                    'eps': params_obj.adam_eps,
-                    'weight_decay': 3e-7
-                }
-            },
-            'scheduler': {
-                'type': 'WarmupDecayLR',
-                'params': {
-                    'total_num_steps': params_obj.epoch_steps*params_obj.epoch_count,
-                    'warmup_min_lr': params_obj.lr_final,
-                    'warmup_max_lr': params_obj.lr_init,
-                    'warmup_num_steps': params_obj.warmup_steps
-                }
-            },
-            'zero_optimization': {
-                'stage': 2,
-                'allgather_partitions': False,
-                'allgather_bucket_size': 200 * 1000 * 1000,
-                'reduce_scatter': False,
-                'reduce_bucket_size': 200 * 1000 * 1000,
-                'overlap_comm': False,
-                'contiguous_gradients': False,
-                'offload_optimizer': {
-                    'device': 'cpu'
-                },
-                'offload_param': {
-                    'device': 'cpu',
-                    'pin_memory': True
-                },
-            },
-            'bf16': {
-                'enabled': True,
-            },
-            'fp16': {
-                'enabled': False,
-            },
-            'train_batch_size': args.batches_num,
-            'train_micro_batch_size_per_gpu': args.batches_num
-        }
         trainer_params = {
             'gradient_clip_val': 1.0,
             'log_every_n_steps': args.steps_num//10,
@@ -471,10 +427,57 @@ if __name__ == "__main__":
             'max_steps': args.steps_num*args.epochs_num,
             'accelerator': 'gpu',
             'enable_checkpointing': False,
-            'strategy':  DeepSpeedStrategy(config=DEEPSPEED_CONFIG),
             'precision': PRECISION,
             'callbacks': [TRAIN_CALLBACK],
         }
+
+        if args.offload:
+            DEEPSPEED_CONFIG = {
+                'optimizer': {
+                    'type': 'Adam',
+                    'params': {
+                        'lr': params_obj.lr_init,
+                        'betas': params_obj.betas,
+                        'eps': params_obj.adam_eps,
+                        'weight_decay': 3e-7
+                    }
+                },
+                'scheduler': {
+                    'type': 'WarmupDecayLR',
+                    'params': {
+                        'total_num_steps': params_obj.epoch_steps*params_obj.epoch_count,
+                        'warmup_min_lr': params_obj.lr_final,
+                        'warmup_max_lr': params_obj.lr_init,
+                        'warmup_num_steps': params_obj.warmup_steps
+                    }
+                },
+                'zero_optimization': {
+                    'stage': 2,
+                    'allgather_partitions': False,
+                    'allgather_bucket_size': 200 * 1000 * 1000,
+                    'reduce_scatter': False,
+                    'reduce_bucket_size': 200 * 1000 * 1000,
+                    'overlap_comm': False,
+                    'contiguous_gradients': False,
+                    'offload_optimizer': {
+                        'device': 'cpu'
+                    },
+                    'offload_param': {
+                        'device': 'cpu',
+                        'pin_memory': True
+                    },
+                },
+                'bf16': {
+                    'enabled': True,
+                },
+                'fp16': {
+                    'enabled': False,
+                },
+                'train_batch_size': args.batches_num,
+                'train_micro_batch_size_per_gpu': args.batches_num
+            }
+            trainer_params['strategy'] = DeepSpeedStrategy(config=DEEPSPEED_CONFIG)
+
         trainer_pl = pl.Trainer(**trainer_params)
 
         if params_obj.vae_emb['enabled'] and params_obj.vae_emb['training']:

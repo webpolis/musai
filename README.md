@@ -147,12 +147,13 @@ options:
                         Learning rate decay thru steps
   -a, --attention       Enable tiny attention (*)
   -l, --lora            Activate LoRa (Low-Rank Adaptation) (*)
-  -g, --grad_cp         Gradient checkpointing (*)
+  -f, --offload         DeepSpeed offload (**)
   -q, --head_qk         Enable head QK (*)
 
 ```
 
 _* Only used when training the main model._
+_** Slower, but more VRAM room_
 
 ### Runner
 
