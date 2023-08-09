@@ -68,7 +68,7 @@ torch.cuda.empty_cache()
 Some definitions
 """
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-PRECISION = 'bf16'
+PRECISION = '16'
 CTX_LEN = 1024
 
 # training related
