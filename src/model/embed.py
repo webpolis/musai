@@ -203,7 +203,9 @@ class VAE(pl.LightningModule):
         return samples
 
     def training_step(self, batch, batch_idx):
-        input = batch[0][np.random.randint(0, len(batch[0]))]
+        # handle x,y case or proceed unmodified
+        input = torch.cat((batch[0], batch[1]), 1) \
+            if type(batch) == list and len(batch) == 2 else batch
         output, emb_hat, emb, hidden, mean, log_var = self(input)
         loss = self.loss_function(
             emb,
