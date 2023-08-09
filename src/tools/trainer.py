@@ -291,7 +291,7 @@ if __name__ == "__main__":
                             action='store_true', default=False)
     arg_parser.add_argument('-l', '--lora', help='Activate LoRa (Low-Rank Adaptation)',
                             action='store_true', default=False)
-    arg_parser.add_argument('-f', '--offload', help='DeepSpeed offload',
+    arg_parser.add_argument('-u', '--offload', help='DeepSpeed offload',
                             action='store_true', default=False)
     arg_parser.add_argument('-q', '--head_qk', help='Enable head QK',
                             action='store_true', default=False)
