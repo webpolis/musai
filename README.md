@@ -147,7 +147,7 @@ options:
                         Learning rate decay thru steps
   -a, --attention       Enable tiny attention (*)
   -l, --lora            Activate LoRa (Low-Rank Adaptation) (*)
-  -f, --offload         DeepSpeed offload (**)
+  -u, --offload         DeepSpeed offload (**)
   -q, --head_qk         Enable head QK (*)
 
 ```
