@@ -14,7 +14,7 @@ HIDDEN_DIM = 1024
 VOCAB_SIZE = 560
 LATENT_DIM = HIDDEN_DIM//4
 COMPUTE_LOGITS = False
-DROPOUT = 0.2
+DROPOUT = 0.1
 LR = 1e-5
 
 
@@ -36,11 +36,14 @@ class Encoder(nn.Module):
                         hidden_dims[i]//2,
                         bias=False
                     ),
-                    nn.Dropout(DROPOUT/(i+1))
+                    nn.LeakyReLU(0.2)
                 ),
             )
 
-        self.module = nn.Sequential(*modules, nn.LeakyReLU(0.2))
+            if i == 0:
+                modules.append(nn.Dropout(DROPOUT))
+
+        self.module = nn.Sequential(*modules)
         self.fc_mean = nn.Linear(hidden_dims[-1]//2, latent_dim)
         self.fc_logvar = nn.Linear(hidden_dims[-1]//2, latent_dim)
 
@@ -72,13 +75,9 @@ class Decoder(nn.Module):
                         hidden_dims[i],
                         bias=False
                     ),
-                    nn.Dropout((DROPOUT/len(hidden_dims))*(i+1))
+                    nn.LeakyReLU(0.2)
                 )
             )
-
-        modules.append(
-            nn.LeakyReLU(0.2)
-        )
 
         self.module = nn.Sequential(
             *modules,
@@ -204,7 +203,9 @@ class VAE(pl.LightningModule):
         return samples
 
     def training_step(self, batch, batch_idx):
-        input = batch[0][np.random.randint(0, len(batch[0]))]
+        # handle x,y case or proceed unmodified
+        input = torch.cat((batch[0], batch[1]), 1) \
+            if type(batch) == list and len(batch) == 2 else batch
         output, emb_hat, emb, hidden, mean, log_var = self(input)
         loss = self.loss_function(
             emb,

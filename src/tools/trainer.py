@@ -68,7 +68,7 @@ torch.cuda.empty_cache()
 Some definitions
 """
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-PRECISION = 'bf16'
+PRECISION = '16'
 CTX_LEN = 1024
 
 # training related
@@ -431,26 +431,37 @@ if __name__ == "__main__":
             'callbacks': [TRAIN_CALLBACK],
         }
 
+        DEEPSPEED_CONFIG = {
+            'optimizer': {
+                'type': 'Adam',
+                'params': {
+                    'lr': params_obj.lr_init,
+                    'betas': params_obj.betas,
+                    'eps': params_obj.adam_eps,
+                    'weight_decay': 3e-7
+                }
+            },
+            'scheduler': {
+                'type': 'WarmupDecayLR',
+                'params': {
+                    'total_num_steps': params_obj.epoch_steps*params_obj.epoch_count,
+                    'warmup_min_lr': params_obj.lr_final,
+                    'warmup_max_lr': params_obj.lr_init,
+                    'warmup_num_steps': params_obj.warmup_steps
+                }
+            },
+            'bf16': {
+                'enabled': PRECISION == 'bf16',
+            },
+            'fp16': {
+                'enabled': PRECISION == '16',
+            },
+            'train_batch_size': args.batches_num,
+            'train_micro_batch_size_per_gpu': args.batches_num
+        }
+
         if args.offload:
             DEEPSPEED_CONFIG = {
-                'optimizer': {
-                    'type': 'Adam',
-                    'params': {
-                        'lr': params_obj.lr_init,
-                        'betas': params_obj.betas,
-                        'eps': params_obj.adam_eps,
-                        'weight_decay': 3e-7
-                    }
-                },
-                'scheduler': {
-                    'type': 'WarmupDecayLR',
-                    'params': {
-                        'total_num_steps': params_obj.epoch_steps*params_obj.epoch_count,
-                        'warmup_min_lr': params_obj.lr_final,
-                        'warmup_max_lr': params_obj.lr_init,
-                        'warmup_num_steps': params_obj.warmup_steps
-                    }
-                },
                 'zero_optimization': {
                     'stage': 2,
                     'allgather_partitions': False,
@@ -466,18 +477,10 @@ if __name__ == "__main__":
                         'device': 'cpu',
                         'pin_memory': True
                     },
-                },
-                'bf16': {
-                    'enabled': True,
-                },
-                'fp16': {
-                    'enabled': False,
-                },
-                'train_batch_size': args.batches_num,
-                'train_micro_batch_size_per_gpu': args.batches_num
+                }
             }
-            trainer_params['strategy'] = DeepSpeedStrategy(config=DEEPSPEED_CONFIG)
 
+        trainer_params['strategy'] = DeepSpeedStrategy(config=DEEPSPEED_CONFIG)
         trainer_pl = pl.Trainer(**trainer_params)
 
         if params_obj.vae_emb['enabled'] and params_obj.vae_emb['training']:
