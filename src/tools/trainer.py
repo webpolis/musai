@@ -387,7 +387,7 @@ if __name__ == "__main__":
         },
         'vocab_size': vocab_size,
         'wandb': '',
-        'warmup_steps': 10,
+        'warmup_steps': int(args.steps_num*.01),
     }
 
     logger.info(params)
