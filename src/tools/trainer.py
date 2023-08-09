@@ -37,6 +37,7 @@ import time
 import datetime
 import argparse
 import random
+import numpy as np
 import gc
 import os
 import torch
@@ -242,7 +243,7 @@ class TrainCallback(Callback):
                     logger.error(error)
 
             trainer.my_log.write(
-                f'{args.epoch_begin + trainer.current_epoch} {trainer.my_epoch_loss:.6f} {math.exp(trainer.my_epoch_loss):.4f} {trainer.my_lr:.8f} {datetime.datetime.now()} {trainer.current_epoch}\n')
+                f'{args.epoch_begin + trainer.current_epoch} {trainer.my_epoch_loss:.6f} {np.exp(trainer.my_epoch_loss):.4f} {trainer.my_lr:.8f} {datetime.datetime.now()} {trainer.current_epoch}\n')
             trainer.my_log.flush()
 
             trainer.my_loss_sum = 0
