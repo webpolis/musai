@@ -82,7 +82,7 @@ LR_RATE = 1e-4
 LR_DECAY = 0
 
 os.environ['RWKV_JIT_ON'] = '0'
-os.environ['RWKV_FLOAT_MODE'] = PRECISION
+os.environ['RWKV_FLOAT_MODE'] = 'fp16' if PRECISION == '16' else 'bf16'
 
 
 def save_pth(dd, ff):
