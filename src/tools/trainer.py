@@ -336,6 +336,7 @@ if __name__ == "__main__":
         ) else
         args.vae_emb[1] if
         (
+            args.vae_emb != None and
             len(args.vae_emb) > 1 and VAE_MODE == 'train' and os.path.isfile(
                 args.vae_emb[1])
         ) else
