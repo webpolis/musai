@@ -450,7 +450,6 @@ class RWKV(pl.LightningModule):
                     latent_dim,
                     hidden_dims=[hidden_dim*4, hidden_dim*2, hidden_dim, hidden_dim//2],
                     vocab_size=vocab_size,
-                    logging=False
                 )
         else:
             self.emb = nn.Embedding(
