@@ -176,7 +176,7 @@ if __name__ == "__main__":
                             help='The output path were tokens are saved', type=str)
     arg_parser.add_argument('-m', '--midis_path', default=MIDIS_PATH,
                             help='The path where MIDI files can be located', type=str)
-    arg_parser.add_argument('-g', '--midis_glob', default='*mix*.mid',
+    arg_parser.add_argument('-g', '--midis_glob', default='*.mid',
                             help='The glob pattern used to locate MIDI files', type=str)
     arg_parser.add_argument('-b', '--bpe', help='Applies BPE to the corpora of tokens',
                             action='store_true', default=False)
