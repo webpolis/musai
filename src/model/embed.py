@@ -81,7 +81,7 @@ class Decoder(nn.Module):
 
         self.module = nn.Sequential(
             *modules,
-            nn.Linear(hidden_dims[-1], embed_dim, bias=False)
+            nn.Linear(hidden_dims[-1], embed_dim, bias=True)
         )
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
@@ -105,7 +105,7 @@ class VAE(pl.LightningModule):
         self.emb = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
         self.encoder = Encoder(hidden_dims, latent_dim, embed_dim)
         self.decoder = Decoder(hidden_dims, latent_dim, embed_dim)
-        self.z_emb = nn.Linear(latent_dim, embed_dim, bias=False)
+        self.z_emb = nn.Linear(latent_dim, embed_dim, bias=True)
         self.proj = nn.Linear(embed_dim, vocab_size, bias=True)
         self.ln_out = nn.LayerNorm(vocab_size)
 
