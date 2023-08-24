@@ -444,6 +444,7 @@ class RWKV(pl.LightningModule):
                     latent_dim,
                     hidden_dim
                 )
+                self.emb_norm = nn.LayerNorm(args.n_embd)
             else:
                 self.emb = VAE(
                     embed_dim,
@@ -551,6 +552,8 @@ class RWKV(pl.LightningModule):
                     output, x, emb, hidden, mean, logvar = self.emb(idx)
             else:
                 output, x, emb, hidden, mean, logvar = self.emb(idx)
+
+            x = self.emb_norm(x)
 
             self.register_buffer('emb_input', idx.detach().clone(), persistent=False)
             self.register_buffer('emb_output', output, persistent=False)

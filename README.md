@@ -39,11 +39,12 @@ options:
   -t TOKENS_PATH, --tokens_path TOKENS_PATH
                         The output path were tokens are saved
   -m MIDIS_PATH, --midis_path MIDIS_PATH
-                        The path where MIDI files can be located
+                        The path where MIDI files can be located or a file containing a list of paths
   -g MIDIS_GLOB, --midis_glob MIDIS_GLOB
                         The glob pattern used to locate MIDI files
   -b, --bpe             Applies BPE to the corpora of tokens
-  -p, --process         Extracts tokens from the MIDI files
+  -p PARAMS_PATH, --preload PARAMS_PATH
+                        Absolute path to existing token_params.cfg settings
   -a {REMI,MMM}, --algo {REMI,MMM}
                         Tokenization algorithm
   -c CLASSES, --classes CLASSES
