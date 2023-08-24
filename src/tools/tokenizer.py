@@ -175,13 +175,14 @@ if __name__ == "__main__":
     arg_parser.add_argument('-t', '--tokens_path', default=TOKENS_PATH,
                             help='The output path were tokens are saved', type=str)
     arg_parser.add_argument('-m', '--midis_path', default=MIDIS_PATH,
-                            help='The path where MIDI files can be located', type=str)
+                            help='The path where MIDI files can be located or a file containing a list of paths',
+                            type=str)
     arg_parser.add_argument('-g', '--midis_glob', default='*.mid',
                             help='The glob pattern used to locate MIDI files', type=str)
     arg_parser.add_argument('-b', '--bpe', help='Applies BPE to the corpora of tokens',
                             action='store_true', default=False)
-    arg_parser.add_argument('-p', '--process', help='Extracts tokens from the MIDI files',
-                            action='store_true', default=False)
+    arg_parser.add_argument('-p', '--preload', help='Absolute path to existing token_params.cfg settings',
+                            default='token_params.cfg', type=str)
     arg_parser.add_argument('-a', '--algo', help='Tokenization algorithm',
                             choices=TOKENIZER_ALGOS, default='REMI', type=str)
     arg_parser.add_argument('-c', '--classes', help='Only extract this instruments classes (e.g. 1,14,16,3,4,10,11)',
@@ -292,7 +293,8 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
         tokenizer = MMM(density_bins_max=(10, 20), tokenizer_config=TokenizerConfig(
             **TOKENIZER_PARAMS), params=params)
 
-    logger.info('Tokenizer initialized. Using {algo}', algo=algo)
+    logger.info(
+        'Tokenizer initialized. Using {algo} ({size})', algo=algo, size=len(tokenizer))
 
     return tokenizer
 
@@ -460,63 +462,69 @@ if __name__ == "__main__":
     MIDI_TITLES = []
     MIDI_PROGRAMS = []
 
-    if args.process:
-        if not args.debug:
-            # starts orchestration
-            ray.init(num_cpus=psutil.cpu_count())
+    if not args.debug:
+        # starts orchestration
+        ray.init(num_cpus=psutil.cpu_count())
 
-            MIDI_COLLECTION_REFS = get_collection_refs(
-                args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length)
+        MIDI_COLLECTION_REFS = get_collection_refs(
+            args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length)
 
-            for ray_midi_ref in MIDI_COLLECTION_REFS:
-                midi_doc = ray.get(ray_midi_ref)
+        for ray_midi_ref in MIDI_COLLECTION_REFS:
+            midi_doc = ray.get(ray_midi_ref)
 
-                if midi_doc != None:
-                    MIDI_TITLES.append(midi_doc['name'])
-                    MIDI_PROGRAMS.append(midi_doc['programs'])
-        else:
-            MIDI_COLLECTION_REFS = get_collection_refs(
-                args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length, args.debug)
-            MIDI_TITLES = [midi_ref['name'] for midi_ref in MIDI_COLLECTION_REFS]
-            MIDI_PROGRAMS = [midi_ref['programs'] for midi_ref in MIDI_COLLECTION_REFS]
+            if midi_doc != None:
+                MIDI_TITLES.append(midi_doc['name'])
+                MIDI_PROGRAMS.append(midi_doc['programs'])
+    else:
+        MIDI_COLLECTION_REFS = get_collection_refs(
+            args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length, args.debug)
+        MIDI_TITLES = [midi_ref['name'] for midi_ref in MIDI_COLLECTION_REFS]
+        MIDI_PROGRAMS = [midi_ref['programs'] for midi_ref in MIDI_COLLECTION_REFS]
 
-        logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
-            MIDI_COLLECTION_REFS))
+    logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
+        MIDI_COLLECTION_REFS))
 
-        Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
+    Path(args.tokens_path).mkdir(parents=True, exist_ok=True)
 
-        # collect used programs
-        programs_used = [program for program in list(
-            set(reduce(iconcat, MIDI_PROGRAMS, [])))]
+    # collect used programs
+    programs_used = [program for program in list(
+        set(reduce(iconcat, MIDI_PROGRAMS, [])))]
 
-        # initializes tokenizer
-        TOKENIZER = get_tokenizer(programs=programs_used, algo=args.algo)
+    # initializes tokenizer
+    params_path = os.path.join(args.tokens_path, args.preload)
+    preloads = Path(params_path).is_file()
 
-        # process tokenization via Ray
-        if not args.debug:
-            pb = ProgressBar(len(MIDI_COLLECTION_REFS))
-            actor = pb.actor
-            midi_collection_refs = MIDI_COLLECTION_REFS
-        else:
-            actor = None
-            midi_collection_refs = tqdm(MIDI_COLLECTION_REFS)
+    if preloads:
+        logger.info('Preloading params from {path}', path=params_path)
 
-        tokenize_call = tokenize_set if args.debug else tokenize_set.remote
-        ray_tokenized_refs = [tokenize_call(ray_midi_ref, args.tokens_path, TOKENIZER,
-                                            actor, bpe=args.bpe, debug=args.debug) for ray_midi_ref in midi_collection_refs]
+    TOKENIZER = get_tokenizer(
+        programs=programs_used, algo=args.algo) if not preloads else get_tokenizer(params=params_path)
 
-        if not args.debug:
-            pb.print_until_done()
-            ray.shutdown()
+    # process tokenization via Ray
+    if not args.debug:
+        pb = ProgressBar(len(MIDI_COLLECTION_REFS))
+        actor = pb.actor
+        midi_collection_refs = MIDI_COLLECTION_REFS
+    else:
+        actor = None
+        midi_collection_refs = tqdm(MIDI_COLLECTION_REFS)
 
-        logger.info('Vocab size (base): {vocab_size}',
-                    vocab_size=len(TOKENIZER.vocab))
-        logger.info('Saving params...')
+    tokenize_call = tokenize_set if args.debug else tokenize_set.remote
+    ray_tokenized_refs = [tokenize_call(ray_midi_ref, args.tokens_path, TOKENIZER,
+                                        actor, bpe=args.bpe, debug=args.debug) for ray_midi_ref in midi_collection_refs]
 
-        """ !IMPORTANT always store the _vocab_base when saving params. 
-        Order of keys in the vocab may differ in a new instance of a preloaded TOKENIZER. """
-        TOKENIZER.save_params(
-            f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', {'_vocab_base': TOKENIZER.vocab})
+    if not args.debug:
+        pb.print_until_done()
+        ray.shutdown()
+
+    logger.info('Vocab size (base): {vocab_size}',
+                vocab_size=len(TOKENIZER.vocab))
+    logger.info('Saving params...')
+
+    """ !IMPORTANT always store the _vocab_base when saving params. 
+    Order of keys in the vocab may differ in a new instance of a preloaded TOKENIZER. """
+    TOKENIZER.save_params(
+        f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', {'_vocab_base': TOKENIZER.vocab})
 
     if args.bpe:
         # Constructs the vocabulary with BPE, from the tokenized files
@@ -525,9 +533,8 @@ if __name__ == "__main__":
 
         Path(tokens_bpe_path).mkdir(parents=True, exist_ok=True)
 
-        if not args.process:
-            TOKENIZER = get_tokenizer(
-                params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', algo=args.algo)
+        TOKENIZER = get_tokenizer(
+            params=f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', algo=args.algo)
 
         logger.info('Learning BPE from vocab size {vocab_size}...', vocab_size=len(
             TOKENIZER))
