@@ -1,4 +1,4 @@
-from typing_extensions import Self
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -10,7 +10,8 @@ from typing import List, Dict, Any
 CUDA = torch.cuda.is_available()
 DEVICE = torch.device("cuda" if CUDA else "cpu")
 EMBED_DIM = 768
-HIDDEN_DIM = 1024
+HIDDEN_DIM = int(os.environ['VAE_HIDDEN_DIM']
+                 ) if 'VAE_HIDDEN_DIM' in os.environ else 4096
 VOCAB_SIZE = 560
 LATENT_DIM = HIDDEN_DIM//4
 COMPUTE_LOGITS = False
@@ -19,14 +20,17 @@ LR = 1e-5
 
 
 class Encoder(nn.Module):
-    def __init__(self, hidden_dims: List = [HIDDEN_DIM], latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
+    def __init__(self, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
         super(Encoder, self).__init__()
 
         modules = []
+        hidden_dims = [
+            hidden_dim,
+            hidden_dim // 2,
+            hidden_dim // 4
+        ]
 
-        modules.append(
-            nn.Linear(embed_dim, hidden_dims[0], bias=False)
-        )
+        modules.append(nn.Linear(embed_dim, hidden_dims[0], bias=False))
 
         for i in range(0, len(hidden_dims)):
             modules.append(
@@ -56,10 +60,15 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, hidden_dims: List = [HIDDEN_DIM], latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
+    def __init__(self, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
         super(Decoder, self).__init__()
 
         modules = []
+        hidden_dims = [
+            hidden_dim,
+            hidden_dim // 2,
+            hidden_dim // 4
+        ]
 
         hidden_dims.reverse()
 
@@ -81,7 +90,8 @@ class Decoder(nn.Module):
 
         self.module = nn.Sequential(
             *modules,
-            nn.Linear(hidden_dims[-1], embed_dim, bias=True)
+            nn.Linear(hidden_dims[-1], embed_dim, bias=True),
+            nn.Hardtanh()
         )
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
@@ -95,7 +105,7 @@ class VAE(pl.LightningModule):
     def __init__(self,
                  embed_dim: int = EMBED_DIM,
                  latent_dim: int = LATENT_DIM,
-                 hidden_dims: List = [HIDDEN_DIM],
+                 hidden_dim: int = HIDDEN_DIM,
                  vocab_size: int = VOCAB_SIZE,
                  ) -> None:
         super(VAE, self).__init__()
@@ -103,15 +113,18 @@ class VAE(pl.LightningModule):
         self.latent_dim = latent_dim
         self.vocab_size = vocab_size
         self.emb = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
-        self.encoder = Encoder(hidden_dims, latent_dim, embed_dim)
-        self.decoder = Decoder(hidden_dims, latent_dim, embed_dim)
+        self.encoder = Encoder(hidden_dim, latent_dim, embed_dim)
+        self.decoder = Decoder(hidden_dim, latent_dim, embed_dim)
         self.z_emb = nn.Linear(latent_dim, embed_dim, bias=True)
-        self.proj = nn.Linear(embed_dim, vocab_size, bias=True)
-        self.ln_out = nn.LayerNorm(vocab_size)
+
+        if COMPUTE_LOGITS:
+            self.proj = nn.Linear(embed_dim, vocab_size, bias=True)
+            self.ln_out = nn.LayerNorm(vocab_size)
+
+            self.proj.bias.data.zero_()
+            self.proj.weight.data.uniform_(-0.1, 0.1)
 
         self.emb.weight.data.uniform_(-0.1, 0.1)
-        self.proj.bias.data.zero_()
-        self.proj.weight.data.uniform_(-0.1, 0.1)
 
     def encode(self, input: Tensor) -> List[Tensor]:
         emb = self.emb(input)
@@ -224,12 +237,12 @@ class VAE(pl.LightningModule):
 
         return [optimizer], [self.trainer._scheduler]
 
-    def from_pretrained(pth_path: str, vocab_size=VOCAB_SIZE, embed_dim=EMBED_DIM, latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM):
+    def from_pretrained(pth_path: str, embed_dim=EMBED_DIM, latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, vocab_size=VOCAB_SIZE):
         model = VAE(
             embed_dim,
             latent_dim,
-            hidden_dims=[hidden_dim*4, hidden_dim*2, hidden_dim, hidden_dim//2],
-            vocab_size=vocab_size
+            hidden_dim,
+            vocab_size
         )
 
         load_dict = torch.load(pth_path, map_location=DEVICE)

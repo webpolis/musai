@@ -439,18 +439,17 @@ class RWKV(pl.LightningModule):
 
                 self.emb = VAE.from_pretrained(
                     args.vae_emb['base_model'],
-                    vocab_size,
                     embed_dim,
                     latent_dim,
-                    hidden_dim
+                    hidden_dim,
+                    vocab_size
                 )
-                self.emb_norm = nn.LayerNorm(args.n_embd)
             else:
                 self.emb = VAE(
                     embed_dim,
                     latent_dim,
-                    hidden_dims=[hidden_dim*4, hidden_dim*2, hidden_dim, hidden_dim//2],
-                    vocab_size=vocab_size,
+                    hidden_dim,
+                    vocab_size,
                 )
         else:
             self.emb = nn.Embedding(
@@ -549,15 +548,15 @@ class RWKV(pl.LightningModule):
         if args.vae_emb != None and args.vae_emb['enabled']:
             if args.vae_emb['base_model'] != None:
                 with torch.no_grad():
-                    output, x, emb, hidden, mean, logvar = self.emb(idx)
+                    output, emb_hat, emb, hidden, mean, logvar = self.emb(idx)
             else:
-                output, x, emb, hidden, mean, logvar = self.emb(idx)
+                output, emb_hat, emb, hidden, mean, logvar = self.emb(idx)
 
-            x = self.emb_norm(x)
+            x = emb_hat
 
             self.register_buffer('emb_input', idx.detach().clone(), persistent=False)
             self.register_buffer('emb_output', output, persistent=False)
-            self.register_buffer('emb_hat', x.detach().clone(), persistent=False)
+            self.register_buffer('emb_hat', emb_hat, persistent=False)
             self.register_buffer('emb_orig', emb, persistent=False)
             self.register_buffer('emb_hidden', hidden, persistent=False)
             self.register_buffer('emb_mean', mean, persistent=False)

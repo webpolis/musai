@@ -69,13 +69,14 @@ torch.cuda.empty_cache()
 Some definitions
 """
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-PRECISION = '16'
+PRECISION = os.environ['PRECISION'] if 'PRECISION' in os.environ else '16'
 CTX_LEN = 1024
 
 # training related
 BATCHES = 5
 N_EMBED = 768
 N_LAYER = 24
+DROPOUT = float(os.environ['DROPOUT']) if 'DROPOUT' in os.environ else 0.05
 EPOCHS = 100
 EPOCH_STEPS = 250
 LR_RATE = 1e-4
@@ -350,7 +351,7 @@ if __name__ == "__main__":
         'ctx_len': args.ctx_len,
         'dim_att': args.embed_num,
         'dim_ffn': args.embed_num*4,
-        'dropout_p': 0.1,
+        'dropout_p': DROPOUT,
         'epoch_begin': args.epochs_first,
         'epoch_count': args.epochs_num,
         'epoch_save': 1,
@@ -489,23 +490,21 @@ if __name__ == "__main__":
             # train the VAE model (embeddings) alone
             logger.info('Setting up trainer for embeddings model...')
 
-            HIDDEN_DIM = params_obj.vae_emb['hidden_dim']
-
             if VAE_FILE != None:
                 logger.info(f'Preloading embeddings from {VAE_FILE}...')
 
                 emb_model = VAE.from_pretrained(
                     VAE_FILE,
-                    params_obj.vae_emb['vocab_size'],
                     params_obj.vae_emb['embed_dim'],
                     params_obj.vae_emb['latent_dim'],
-                    HIDDEN_DIM,
+                    params_obj.vae_emb['hidden_dim'],
+                    params_obj.vae_emb['vocab_size'],
                 )
             else:
                 emb_model = VAE(
                     params_obj.vae_emb['embed_dim'],
                     params_obj.vae_emb['latent_dim'],
-                    [HIDDEN_DIM*4, HIDDEN_DIM*2, HIDDEN_DIM, HIDDEN_DIM//2],
+                    params_obj.vae_emb['hidden_dim'],
                     params_obj.vae_emb['vocab_size'],
                 )
 

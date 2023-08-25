@@ -104,7 +104,7 @@ The saved embedding model will be stored in the output path with a name such as 
 python src/tools/trainer.py -t path_to_tokenized_dataset -o output_path -v path_to_pretrained_embeddings.pth -e 768 -c 2048 -n 12 -b 24 -p 100 -s 1000 -i 1e-5 -g -q
 ```
 
-You can avoid the first step and let the RWKV architecture train its own embeddings by removing the `-v` or `--vae_emb` option.
+You can avoid using VAE entirely and let the RWKV architecture build its own embeddings by removing the `-v` or `--vae_emb` option.
 
 ### Usage
 
