@@ -155,6 +155,11 @@ else:
                 u = u.contiguous()
                 k = k.contiguous()
                 v = v.contiguous()
+            elif '16' in os.environ['RWKV_FLOAT_MODE']:
+                w = -torch.exp(w.half().contiguous())
+                u = u.half().contiguous()
+                k = k.half().contiguous()
+                v = v.half().contiguous()
             else:
                 w = -torch.exp(w.float().contiguous())
                 u = u.float().contiguous()
