@@ -305,7 +305,7 @@ if __name__ == "__main__":
     os.environ['RWKV_T_MAX'] = str(args.ctx_len)
 
     from model import RWKV, LORA_CONFIG
-    from embed import VAE, HIDDEN_DIM, LATENT_DIM
+    from embed import VAE, HIDDEN_N, LATENT_DIM
 
     # seed
     seed = random.randint(1000, 10000)
@@ -383,7 +383,7 @@ if __name__ == "__main__":
             'enabled': VAE_MODE != None,
             'training': VAE_MODE == 'train',
             'embed_dim': args.embed_num,
-            'hidden_dim': HIDDEN_DIM,
+            'hidden_n': HIDDEN_N,
             'latent_dim': LATENT_DIM,
             'base_model': VAE_FILE,
         },
@@ -497,14 +497,14 @@ if __name__ == "__main__":
                     VAE_FILE,
                     params_obj.vae_emb['embed_dim'],
                     params_obj.vae_emb['latent_dim'],
-                    params_obj.vae_emb['hidden_dim'],
+                    params_obj.vae_emb['hidden_n'],
                     params_obj.vae_emb['vocab_size'],
                 )
             else:
                 emb_model = VAE(
                     params_obj.vae_emb['embed_dim'],
                     params_obj.vae_emb['latent_dim'],
-                    params_obj.vae_emb['hidden_dim'],
+                    params_obj.vae_emb['hidden_n'],
                     params_obj.vae_emb['vocab_size'],
                 )
 

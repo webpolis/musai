@@ -10,25 +10,33 @@ from typing import List, Dict, Any
 CUDA = torch.cuda.is_available()
 DEVICE = torch.device("cuda" if CUDA else "cpu")
 EMBED_DIM = 768
-HIDDEN_DIM = int(os.environ['VAE_HIDDEN_DIM']
-                 ) if 'VAE_HIDDEN_DIM' in os.environ else 4096
+HIDDEN_N = int(os.environ['VAE_HIDDEN_N']
+               ) if 'VAE_HIDDEN_N' in os.environ else 4
 VOCAB_SIZE = 560
-LATENT_DIM = HIDDEN_DIM//4
+LATENT_DIM = int(os.environ['VAE_LATENT_DIM']
+                 ) if 'VAE_LATENT_DIM' in os.environ else 512
 COMPUTE_LOGITS = False
 DROPOUT = 0.1
 LR = 1e-5
 
 
+def layer_sizes(num=HIDDEN_N, latent_dim=LATENT_DIM):
+    layer_dims = []
+
+    for i in range(0, num):
+        layer_dims.append(latent_dim * (i+1))
+
+    layer_dims.reverse()
+
+    return layer_dims
+
+
 class Encoder(nn.Module):
-    def __init__(self, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
+    def __init__(self, hidden_n=HIDDEN_N, latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
         super(Encoder, self).__init__()
 
         modules = []
-        hidden_dims = [
-            hidden_dim,
-            hidden_dim // 2,
-            hidden_dim // 4
-        ]
+        hidden_dims = layer_sizes(hidden_n, latent_dim)
 
         modules.append(nn.Linear(embed_dim, hidden_dims[0], bias=False))
 
@@ -60,15 +68,11 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
+    def __init__(self, hidden_n=HIDDEN_N, latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
         super(Decoder, self).__init__()
 
         modules = []
-        hidden_dims = [
-            hidden_dim,
-            hidden_dim // 2,
-            hidden_dim // 4
-        ]
+        hidden_dims = layer_sizes(hidden_n, latent_dim)
 
         hidden_dims.reverse()
 
@@ -90,8 +94,7 @@ class Decoder(nn.Module):
 
         self.module = nn.Sequential(
             *modules,
-            nn.Linear(hidden_dims[-1], embed_dim, bias=True),
-            nn.Hardtanh()
+            nn.Linear(hidden_dims[-1], embed_dim, bias=False)
         )
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
@@ -105,7 +108,7 @@ class VAE(pl.LightningModule):
     def __init__(self,
                  embed_dim: int = EMBED_DIM,
                  latent_dim: int = LATENT_DIM,
-                 hidden_dim: int = HIDDEN_DIM,
+                 hidden_n: int = HIDDEN_N,
                  vocab_size: int = VOCAB_SIZE,
                  ) -> None:
         super(VAE, self).__init__()
@@ -113,9 +116,9 @@ class VAE(pl.LightningModule):
         self.latent_dim = latent_dim
         self.vocab_size = vocab_size
         self.emb = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
-        self.encoder = Encoder(hidden_dim, latent_dim, embed_dim)
-        self.decoder = Decoder(hidden_dim, latent_dim, embed_dim)
-        self.z_emb = nn.Linear(latent_dim, embed_dim, bias=True)
+        self.encoder = Encoder(hidden_n, latent_dim, embed_dim)
+        self.decoder = Decoder(hidden_n, latent_dim, embed_dim)
+        self.z_emb = nn.Linear(latent_dim, embed_dim, bias=False)
 
         if COMPUTE_LOGITS:
             self.proj = nn.Linear(embed_dim, vocab_size, bias=True)
@@ -237,11 +240,11 @@ class VAE(pl.LightningModule):
 
         return [optimizer], [self.trainer._scheduler]
 
-    def from_pretrained(pth_path: str, embed_dim=EMBED_DIM, latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, vocab_size=VOCAB_SIZE):
+    def from_pretrained(pth_path: str, embed_dim=EMBED_DIM, latent_dim=LATENT_DIM, hidden_n=HIDDEN_N, vocab_size=VOCAB_SIZE):
         model = VAE(
             embed_dim,
             latent_dim,
-            hidden_dim,
+            hidden_n,
             vocab_size
         )
 
