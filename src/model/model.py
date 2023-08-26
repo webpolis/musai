@@ -430,7 +430,7 @@ class RWKV(pl.LightningModule):
         if args.vae_emb != None and args.vae_emb['enabled']:
             embed_dim = args.vae_emb['embed_dim']
             latent_dim = args.vae_emb['latent_dim']
-            hidden_dim = args.vae_emb['hidden_dim']
+            hidden_n = args.vae_emb['hidden_n']
             vocab_size = args.vae_emb['vocab_size']
 
             if args.vae_emb['base_model'] != None:
@@ -441,14 +441,14 @@ class RWKV(pl.LightningModule):
                     args.vae_emb['base_model'],
                     embed_dim,
                     latent_dim,
-                    hidden_dim,
+                    hidden_n,
                     vocab_size
                 )
             else:
                 self.emb = VAE(
                     embed_dim,
                     latent_dim,
-                    hidden_dim,
+                    hidden_n,
                     vocab_size,
                 )
         else:
