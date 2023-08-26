@@ -561,7 +561,7 @@ class RWKV(pl.LightningModule):
 
             self.register_buffer('emb_input', idx.detach().clone(), persistent=False)
             self.register_buffer('emb_output', output, persistent=False)
-            self.register_buffer('emb_hat', emb_hat, persistent=False)
+            self.register_buffer('emb_hat', emb_hat.detach().clone(), persistent=False)
             self.register_buffer('emb_orig', emb, persistent=False)
             self.register_buffer('emb_hidden', hidden, persistent=False)
             self.register_buffer('emb_mean', mean, persistent=False)
