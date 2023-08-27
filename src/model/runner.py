@@ -237,7 +237,7 @@ class RWKV_RNN(BaseModule):
             w = self.w
             args = self.args
 
-            x = w.emb.weight[ctx[-1]]
+            x = (w.emb.emb if hasattr(w.emb, 'emb') else w.emb).weight[ctx[-1]]
             if self.RUN_DEVICE == 'cuda':
                 x = x.cuda()
             try:
