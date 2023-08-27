@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import lightning.pytorch as pl
+from collections import OrderedDict
 from torch import optim, Tensor
 from typing import List, Dict, Any
 
@@ -16,51 +17,46 @@ VOCAB_SIZE = 560
 LATENT_DIM = int(os.environ['VAE_LATENT_DIM']
                  ) if 'VAE_LATENT_DIM' in os.environ else 512
 COMPUTE_LOGITS = False
-DROPOUT = 0.1
+DROPOUT = 0.05
 LR = 1e-5
 
 
 def layer_sizes(num=HIDDEN_N, latent_dim=LATENT_DIM):
-    layer_dims = []
+    sizes = [latent_dim * 2 ** i for i in range(num)]
 
-    for i in range(0, num):
-        layer_dims.append(latent_dim * (i+1))
+    sizes.reverse()
 
-    layer_dims.reverse()
-
-    return layer_dims
+    return sizes
 
 
 class Encoder(nn.Module):
     def __init__(self, hidden_n=HIDDEN_N, latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
         super(Encoder, self).__init__()
 
-        modules = []
         hidden_dims = layer_sizes(hidden_n, latent_dim)
-
-        modules.append(nn.Linear(embed_dim, hidden_dims[0], bias=False))
+        hidden = OrderedDict()
+        hidden['input'] = nn.Linear(embed_dim, hidden_dims[0], bias=False)
 
         for i in range(0, len(hidden_dims)):
-            modules.append(
-                nn.Sequential(
-                    nn.Linear(
-                        hidden_dims[i] if i == 0 else hidden_dims[i-1]//2,
-                        hidden_dims[i]//2,
-                        bias=False
-                    ),
-                    nn.LeakyReLU(0.2)
+            dim = hidden_dims[i]
+            next_dim = hidden_dims[i+1] if (i+1) <= len(hidden_dims) - 1 else dim
+
+            hidden[f'hidden_{i}'] = nn.Sequential(
+                nn.Linear(
+                    dim,
+                    next_dim,
+                    bias=False
                 ),
+                nn.LeakyReLU(0.2)
             )
 
-            if i == 0:
-                modules.append(nn.Dropout(DROPOUT))
-
-        self.module = nn.Sequential(*modules)
-        self.fc_mean = nn.Linear(hidden_dims[-1]//2, latent_dim)
-        self.fc_logvar = nn.Linear(hidden_dims[-1]//2, latent_dim)
+        self.dropout = nn.Dropout(DROPOUT)
+        self.module = nn.Sequential(hidden)
+        self.fc_mean = nn.Linear(hidden_dims[-1], latent_dim)
+        self.fc_logvar = nn.Linear(hidden_dims[-1], latent_dim)
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
-        hidden = self.module(input)
+        hidden = self.dropout(self.module(input))
         mean = self.fc_mean(hidden)
         logvar = self.fc_logvar(hidden)
 
@@ -71,31 +67,27 @@ class Decoder(nn.Module):
     def __init__(self, hidden_n=HIDDEN_N, latent_dim=LATENT_DIM, embed_dim=EMBED_DIM):
         super(Decoder, self).__init__()
 
-        modules = []
         hidden_dims = layer_sizes(hidden_n, latent_dim)
-
         hidden_dims.reverse()
 
-        modules.append(
-            nn.Linear(latent_dim, hidden_dims[0]//2, bias=False)
-        )
+        hidden = OrderedDict()
+        hidden['input'] = nn.Linear(latent_dim, hidden_dims[0], bias=False)
 
         for i in range(0, len(hidden_dims)):
-            modules.append(
-                nn.Sequential(
-                    nn.Linear(
-                        hidden_dims[i]//2 if i == 0 else hidden_dims[i-1],
-                        hidden_dims[i],
-                        bias=False
-                    ),
-                    nn.LeakyReLU(0.2)
-                )
+            dim = hidden_dims[i]
+            next_dim = hidden_dims[i+1] if (i+1) <= len(hidden_dims) - 1 else dim
+
+            hidden[f'hidden_{i}'] = nn.Sequential(
+                nn.Linear(
+                    dim,
+                    next_dim,
+                    bias=False
+                ),
+                nn.LeakyReLU(0.2)
             )
 
-        self.module = nn.Sequential(
-            *modules,
-            nn.Linear(hidden_dims[-1], embed_dim, bias=False)
-        )
+        hidden['out'] = nn.Linear(hidden_dims[-1], embed_dim, bias=False)
+        self.module = nn.Sequential(hidden)
 
     def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
         result = self.module(input)
