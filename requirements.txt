@@ -2,12 +2,12 @@ deepspeed==0.9.2
 importlib_metadata==6.7.0
 lightning==2.0.2
 loguru==0.7.0
-miditok==2.1.1
+miditok==3.0.4
 miditoolkit @ git+https://github.com/webpolis/miditoolkit@master
 music21==9.1.0
 numpy==1.23.5
 psutil==5.9.5
-ray==2.4.0
+ray==2.41.0
 setuptools==66.0.0
 torch==2.0.1
 tqdm==4.65.0

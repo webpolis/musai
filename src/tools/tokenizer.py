@@ -43,15 +43,16 @@ import ray
 import psutil
 import gc
 from asyncio import Event
+from symusic import Score
 from ray.actor import ActorHandle
 from itertools import chain
 from loguru import logger
 from typing import Tuple
 from pathlib import Path
-from miditok import REMIPlus, MMM
-from miditok.constants import REST_RANGE, BEAT_RES, INSTRUMENT_CLASSES, CHORD_MAPS
+from miditok import REMI, MMM
+from miditok.constants import BEAT_RES, INSTRUMENT_CLASSES, CHORD_MAPS
 from miditok.classes import TokenizerConfig
-from miditok.utils import merge_tracks_per_class, merge_same_program_tracks, get_midi_programs
+from miditok.utils import merge_tracks_per_class, merge_same_program_tracks, get_score_programs
 from miditoolkit import MidiFile
 from tqdm import tqdm
 from functools import reduce
@@ -274,11 +275,9 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
         'chord_maps': CHORD_MAPS,
         'chord_tokens_with_root_note': True,  # Tokens will look as 'Chord_C:maj'
         'chord_unknown': (3, 6),
-        'rest_range': REST_RANGE,
-        'nb_tempos': BINS_TEMPO,
+        'num_tempos': BINS_TEMPO,
         'tempo_range': (40, 250),
-        'nb_velocities': BINS_VELOCITY,
-        'time_signature_range': (16, 2),
+        'num_velocities': BINS_VELOCITY,
     }
 
     if programs != None:
@@ -287,7 +286,7 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
     tokenizer = None
 
     if algo == 'REMI' or algo == 'REMIPlus':
-        tokenizer = REMIPlus(tokenizer_config=TokenizerConfig(
+        tokenizer = REMI(tokenizer_config=TokenizerConfig(
             **TOKENIZER_PARAMS), params=params)
     elif algo == 'MMM':
         tokenizer = MMM(density_bins_max=(10, 20), tokenizer_config=TokenizerConfig(
@@ -315,7 +314,8 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
                 and
                 midi.ticks_per_beat < max(BEAT_RES.values()) * 4
             ):
-        programs = get_midi_programs(midi)
+        midi_file = Score().from_file(midi_path)
+        programs = get_score_programs(midi_file)
         midi_programs = list(set([p[0] for p in programs]))
         drum_programs = list(set([p[0] for p in programs if p[1] == True]))
 
@@ -356,22 +356,22 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
                 keep_programs = list(set(keep_programs + drum_programs))
 
             # remove unwanted tracks
-            merge_tracks_per_class(midi, valid_programs=keep_programs)
+            merge_tracks_per_class(midi_file, valid_programs=keep_programs)
 
             # discard empty songs
             if len(midi.instruments) >= 1:
                 if classes is None:
                     # merge percussion/drums
-                    merge_tracks_per_class(midi, CLASSES_PERCUSSION)
+                    merge_tracks_per_class(midi_file, CLASSES_PERCUSSION)
 
                     # merge synths
-                    merge_tracks_per_class(midi, CLASSES_SYNTHS)
+                    merge_tracks_per_class(midi_file, CLASSES_SYNTHS)
 
                     # merge strings
-                    merge_tracks_per_class(midi, CLASSES_STRINGS)
+                    merge_tracks_per_class(midi_file, CLASSES_STRINGS)
 
                     # merge guitar & bass
-                    merge_tracks_per_class(midi, CLASSES_GUITAR_BASS)
+                    merge_tracks_per_class(midi_file, CLASSES_GUITAR_BASS)
 
                 # merge_same_program_tracks(midi.instruments)
 
@@ -379,7 +379,7 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
                                    str.lower(os.path.basename(midi_path)))
 
                 programs = list(set([program[0]
-                                for program in get_midi_programs(midi)]))
+                                for program in get_score_programs(midi_file)]))
 
                 midi_doc = {
                     'programs': programs,
@@ -404,19 +404,22 @@ def tokenize_set(midi_doc, tokens_path, tokenizer, pba: ActorHandle, bpe=False, 
         pass
 
     if midi != None:
+        midi_file = Score().from_file(midi_doc['path'])
         tokens_cfg = f"{tokens_path}/{midi_doc['name']}.json"
         programs = midi_doc['programs']
 
         try:
             # remove unwanted tracks
-            merge_tracks_per_class(midi, valid_programs=programs)
+            merge_tracks_per_class(midi_file, valid_programs=programs)
 
-            tokens = tokenizer.midi_to_tokens(midi, apply_bpe_if_possible=bpe)
+            tokens = tokenizer.encode(midi_file)
             tokenizer.save_tokens(tokens, tokens_cfg, programs=programs)
         except Exception as error:
+            print(error)
             tokens_cfg = None
         finally:
             del midi
+            del midi_file
 
     if not debug:
         pba.update.remote(1)
@@ -432,7 +435,8 @@ def get_collection_refs(midis_path=None, midis_glob=None, classes=None, classes_
     :rtype: dict
     """
     if os.path.isfile(midis_path):
-        midi_file_paths = [line.strip() for line in open(midis_path) if line.strip()]
+        midi_file_paths = [line.strip()
+                           for line in open(midis_path) if line.strip()]
     else:
         midi_file_paths = list(Path(midis_path).glob(midis_glob))
 
@@ -479,7 +483,8 @@ if __name__ == "__main__":
         MIDI_COLLECTION_REFS = get_collection_refs(
             args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length, args.debug)
         MIDI_TITLES = [midi_ref['name'] for midi_ref in MIDI_COLLECTION_REFS]
-        MIDI_PROGRAMS = [midi_ref['programs'] for midi_ref in MIDI_COLLECTION_REFS]
+        MIDI_PROGRAMS = [midi_ref['programs']
+                         for midi_ref in MIDI_COLLECTION_REFS]
 
     logger.info('Processing tokenization: {collection_size} documents', collection_size=len(
         MIDI_COLLECTION_REFS))
@@ -523,7 +528,7 @@ if __name__ == "__main__":
 
     """ !IMPORTANT always store the _vocab_base when saving params. 
     Order of keys in the vocab may differ in a new instance of a preloaded TOKENIZER. """
-    TOKENIZER.save_params(
+    TOKENIZER.save(
         f'{args.tokens_path}/{TOKEN_PARAMS_NAME}', {'_vocab_base': TOKENIZER.vocab})
 
     if args.bpe:
