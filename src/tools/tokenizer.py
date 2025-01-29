@@ -305,8 +305,9 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
 
     try:
         midi = MidiFile(midi_path)
+        midi_score = Score().from_file(midi_path)
     except Exception as err:
-        pass
+        midi = None
 
     if midi != None \
             and not (
@@ -314,8 +315,7 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
                 and
                 midi.ticks_per_beat < max(BEAT_RES.values()) * 4
             ):
-        midi_file = Score().from_file(midi_path)
-        programs = get_score_programs(midi_file)
+        programs = get_score_programs(midi_score)
         midi_programs = list(set([p[0] for p in programs]))
         drum_programs = list(set([p[0] for p in programs if p[1] == True]))
 
@@ -356,22 +356,22 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
                 keep_programs = list(set(keep_programs + drum_programs))
 
             # remove unwanted tracks
-            merge_tracks_per_class(midi_file, valid_programs=keep_programs)
+            merge_tracks_per_class(midi_score, valid_programs=keep_programs)
 
             # discard empty songs
             if len(midi.instruments) >= 1:
                 if classes is None:
                     # merge percussion/drums
-                    merge_tracks_per_class(midi_file, CLASSES_PERCUSSION)
+                    merge_tracks_per_class(midi_score, CLASSES_PERCUSSION)
 
                     # merge synths
-                    merge_tracks_per_class(midi_file, CLASSES_SYNTHS)
+                    merge_tracks_per_class(midi_score, CLASSES_SYNTHS)
 
                     # merge strings
-                    merge_tracks_per_class(midi_file, CLASSES_STRINGS)
+                    merge_tracks_per_class(midi_score, CLASSES_STRINGS)
 
                     # merge guitar & bass
-                    merge_tracks_per_class(midi_file, CLASSES_GUITAR_BASS)
+                    merge_tracks_per_class(midi_score, CLASSES_GUITAR_BASS)
 
                 # merge_same_program_tracks(midi.instruments)
 
@@ -379,7 +379,7 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
                                    str.lower(os.path.basename(midi_path)))
 
                 programs = list(set([program[0]
-                                for program in get_score_programs(midi_file)]))
+                                for program in get_score_programs(midi_score)]))
 
                 midi_doc = {
                     'programs': programs,
