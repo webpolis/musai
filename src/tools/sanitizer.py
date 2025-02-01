@@ -32,69 +32,104 @@ SOFTWARE.
 """
 import os
 import re
-import ray
 import argparse
-from loguru import logger
 from pathlib import Path
+from typing import Tuple, Optional
+
+from loguru import logger
 from music21 import converter, note, chord
 from music21.stream.base import Score
 from tqdm import tqdm
-from tokenizer import deco, ProgressBar, ProgressBarActor
 
 
-def trim_midi(score: Score):
+def trim_midi(score: Score) -> Tuple[Optional[int], Optional[int]]:
+    """
+    Identifies the first and last measures containing non-rest elements.
+    Returns (None, None) if no non-rest elements are found.
+    """
     start_measure = None
-    end_measure = 0
+    end_measure = None
 
     for element in score.flatten().elements:
-        if isinstance(element, note.Note) or \
-                isinstance(element, note.Rest) or \
-            isinstance(element, note.Unpitched) or \
-                isinstance(element, chord.Chord):
-            if start_measure is None and not element.isRest:
-                start_measure = element.measureNumber
-            if not element.isRest and element.measureNumber > end_measure:
-                end_measure = element.measureNumber
+        if isinstance(element, (note.Note, chord.Chord, note.Unpitched)):
+            current_measure = element.measureNumber
+            if start_measure is None:
+                start_measure = current_measure
+            end_measure = current_measure  # Update to last found non-rest
+        elif isinstance(element, note.Rest) and element.duration.quarterLength > 0:
+            continue  # Skip rests but check other elements
 
     return start_measure, end_measure
 
 
-if __name__ == "__main__":
-    # parse command line arguments
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('-m', '--midis_path', default=None,
-                            help='The path where MIDI files can be located', type=str)
-    arg_parser.add_argument('-g', '--midis_glob', default='*.mid',
-                            help='The glob pattern used to locate MIDI files', type=str)
-    arg_parser.add_argument('-o', '--output_path', default='out',
-                            help='The path where the sanitized MIDI files will be saved', type=str)
-    arg_parser.add_argument('-n', '--rename', help='Sanitize filename for convenience',
-                            action='store_true', default=True)
-    arg_parser.add_argument('-t', '--trim', help='Remove silence from beginning and end of MIDI songs',
-                            action='store_true', default=True)
-    args = arg_parser.parse_args()
+def sanitize_filename(filename: str) -> str:
+    """Sanitizes filename by replacing non-alphanumeric characters with underscores."""
+    name, ext = os.path.splitext(filename)
+    sanitized = re.sub(r'[^a-z\d\-]', '_', name.lower())
+    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+    return f"{sanitized}{ext}" if sanitized else f"untitled{ext}"
 
-    Path(args.output_path).mkdir(parents=True, exist_ok=True)
 
-    if os.path.isfile(args.midis_path):
-        midi_file_paths = [line.strip()
-                           for line in open(args.midis_path) if line.strip()]
+def main():
+    parser = argparse.ArgumentParser(
+        description='Process MIDI files for cleaning and trimming.')
+    parser.add_argument('-m', '--midis_path', required=True,
+                        help='Directory containing MIDI files or a text file listing MIDI paths')
+    parser.add_argument('-g', '--glob_pattern', default='*.mid',
+                        help='Glob pattern for MIDI file discovery')
+    parser.add_argument('-o', '--output_dir', default='processed',
+                        help='Output directory for processed MIDI files')
+    parser.add_argument('--no-rename', dest='rename', action='store_false',
+                        help='Disable filename sanitization')
+    parser.add_argument('--no-trim', dest='trim', action='store_false',
+                        help='Disable silence trimming from MIDI boundaries')
+    args = parser.parse_args()
+
+    # Configure paths and ensure output directory exists
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    midis_path = Path(args.midis_path)
+
+    # Collect MIDI file paths
+    if midis_path.is_file():
+        with open(midis_path) as f:
+            midi_paths = [Path(line.strip()) for line in f if line.strip()]
     else:
-        midi_file_paths = list(Path(args.midis_path).glob(args.midis_glob))
+        midi_paths = list(midis_path.glob(args.glob_pattern))
 
-    for midi_path in tqdm(midi_file_paths):
-        midi_score = converter.parse(midi_path)
-        fname = Path(midi_path).name
+    # Process each MIDI file
+    for midi_path in tqdm(midi_paths, desc='Processing MIDI files'):
+        try:
+            score = converter.parse(str(midi_path))
+        except Exception as e:
+            logger.error(f"Failed to parse {midi_path.name}: {str(e)}")
+            continue
 
-        if args.rename:
-            # rename
-            fname = re.sub(r'[^a-z\d\.]{1,}', '_', fname.lower(), flags=re.IGNORECASE)
+        # Filename sanitization
+        fname = sanitize_filename(
+            midi_path.name) if args.rename else midi_path.name
+        output_path = output_dir / fname
 
+        # Score trimming logic
         if args.trim:
-            # trim MIDI
-            start_measure, end_measure = trim_midi(midi_score)
-            trimmed_score = midi_score.measures(start_measure, end_measure)
-            trim_path = re.sub(r'([\w\d_\-]+)(\.[a-z]+)$', '\\1_trim\\2', fname)
-            trim_path = f'{args.output_path}/{trim_path}'
+            start, end = trim_midi(score)
+            if start is not None and end is not None and start <= end:
+                try:
+                    score = score.measures(start, end)
+                    name_part, ext_part = os.path.splitext(fname)
+                    output_path = output_dir / f"{name_part}_trim{ext_part}"
+                except Exception as e:
+                    logger.warning(f"Trimming failed for {
+                                   midi_path.name}: {str(e)}")
+            else:
+                logger.info(f"No trimming needed for {midi_path.name}")
 
-            trimmed_score.write('midi', fp=trim_path)
+        # Write processed MIDI file
+        try:
+            score.write('midi', fp=str(output_path))
+        except Exception as e:
+            logger.error(f"Failed to write {output_path.name}: {str(e)}")
+
+
+if __name__ == "__main__":
+    main()
