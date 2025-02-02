@@ -53,6 +53,8 @@ options:
                         Minimum set of instruments classes required (e.g. 1,14,16)
   -l LENGTH, --length LENGTH
                         Minimum sequence length (in beats)
+  -n MAX_FILES, --num_limit MAX_FILES
+                        Limit number of files to process (random selection)
   -d, --debug           Debug mode (disables Ray).
 
 ```
