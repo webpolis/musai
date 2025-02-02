@@ -413,9 +413,9 @@ def tokenize_set(midi_doc, tokens_path, tokenizer, pba: ActorHandle, bpe=False, 
     try:
         midi = MidiFile(midi_doc['path'])
     except:
-        pass
+        return None
 
-    if midi != None:
+    if midi is not None:
         midi_file = Score().from_file(midi_doc['path'])
         tokens_cfg = f"{tokens_path}/{midi_doc['name']}.json"
         programs = midi_doc['programs']
