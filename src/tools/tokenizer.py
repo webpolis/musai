@@ -305,16 +305,22 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
 
     try:
         midi = MidiFile(midi_path)
-        midi_score = Score().from_file(midi_path)
     except Exception as err:
         midi = None
 
-    if midi != None \
-            and not (
-                (midi.max_tick/midi.ticks_per_beat) < minlength
-                and
-                midi.ticks_per_beat < max(BEAT_RES.values()) * 4
-            ):
+    try:
+        midi_score = Score().from_file(midi_path)
+    except Exception as err:
+        midi_score = None
+
+    if midi is None or midi_score is None:
+        return midi_doc
+
+    required_ticks = max(BEAT_RES.values()) * 4
+    length_in_beats = midi.max_tick / midi.ticks_per_beat
+    has_req_length = not (length_in_beats < minlength or midi.ticks_per_beat < required_ticks)
+
+    if has_req_length:
         programs = get_score_programs(midi_score)
         midi_programs = list(set([p[0] for p in programs]))
         drum_programs = list(set([p[0] for p in programs if p[1] == True]))
