@@ -313,91 +313,94 @@ def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, mi
     except Exception as err:
         midi_score = None
 
-    if midi is None or midi_score is None:
-        return midi_doc
+    if midi is not None and midi_score is not None:
+        try:
+            required_ticks = max(BEAT_RES.values()) * 4
+            length_in_beats = midi.max_tick / midi.ticks_per_beat
+            has_req_length = not (
+                length_in_beats < minlength or midi.ticks_per_beat < required_ticks)
 
-    try:
-        required_ticks = max(BEAT_RES.values()) * 4
-        length_in_beats = midi.max_tick / midi.ticks_per_beat
-        has_req_length = not (
-            length_in_beats < minlength or midi.ticks_per_beat < required_ticks)
+            if has_req_length:
+                programs = get_score_programs(midi_score)
+                midi_programs = list(set([p[0] for p in programs]))
+                drum_programs = list(
+                    set([p[0] for p in programs if p[1] == True]))
 
-        if has_req_length:
-            programs = get_score_programs(midi_score)
-            midi_programs = list(set([p[0] for p in programs]))
-            drum_programs = list(set([p[0] for p in programs if p[1] == True]))
+                # check if midi has at least one program from each required class
+                meets_req = True
 
-            # check if midi has at least one program from each required class
-            meets_req = True
+                if classes_req != None:
+                    classes_req = classes_req.strip().split(',')
+                    classes_req = [int(c.strip()) for c in classes_req]
 
-            if classes_req != None:
-                classes_req = classes_req.strip().split(',')
-                classes_req = [int(c.strip()) for c in classes_req]
-
-                for ic in classes_req:
-                    class_programs = list(
-                        INSTRUMENT_CLASSES[ic]['program_range'])
-                    intersect = list(set(midi_programs) & set(class_programs))
-                    meets_req = (ic == 16 and len(drum_programs) > 0) \
-                        or meets_req and len(intersect) > 0
-
-                    if not meets_req:
-                        break
-
-            if meets_req:
-                # remove unwanted tracks
-                programs_to_delete = []
-
-                if classes is None:
-                    for ic in CLASS_EFFECTS:
-                        programs_to_delete += list(
+                    for ic in classes_req:
+                        class_programs = list(
                             INSTRUMENT_CLASSES[ic]['program_range'])
-                else:
-                    classes = classes.strip().split(',')
-                    classes = [int(c.strip()) for c in classes]
-                    programs_to_delete = get_other_programs(classes)
+                        intersect = list(set(midi_programs) &
+                                         set(class_programs))
+                        meets_req = (ic == 16 and len(drum_programs) > 0) \
+                            or meets_req and len(intersect) > 0
 
-                keep_programs = filter_programs(programs_to_delete)
+                        if not meets_req:
+                            break
 
-                # some drum tracks use non-standard programs
-                if classes != None and 16 in classes \
-                        and len(drum_programs) > 0:
-                    keep_programs = list(set(keep_programs + drum_programs))
+                if meets_req:
+                    # remove unwanted tracks
+                    programs_to_delete = []
 
-                # remove unwanted tracks
-                merge_tracks_per_class(
-                    midi_score, valid_programs=keep_programs)
-
-                # discard empty songs
-                if len(midi.instruments) >= 1:
                     if classes is None:
-                        # merge percussion/drums
-                        merge_tracks_per_class(midi_score, CLASSES_PERCUSSION)
+                        for ic in CLASS_EFFECTS:
+                            programs_to_delete += list(
+                                INSTRUMENT_CLASSES[ic]['program_range'])
+                    else:
+                        classes = classes.strip().split(',')
+                        classes = [int(c.strip()) for c in classes]
+                        programs_to_delete = get_other_programs(classes)
 
-                        # merge synths
-                        merge_tracks_per_class(midi_score, CLASSES_SYNTHS)
+                    keep_programs = filter_programs(programs_to_delete)
 
-                        # merge strings
-                        merge_tracks_per_class(midi_score, CLASSES_STRINGS)
+                    # some drum tracks use non-standard programs
+                    if classes != None and 16 in classes \
+                            and len(drum_programs) > 0:
+                        keep_programs = list(
+                            set(keep_programs + drum_programs))
 
-                        # merge guitar & bass
-                        merge_tracks_per_class(midi_score, CLASSES_GUITAR_BASS)
+                    # remove unwanted tracks
+                    merge_tracks_per_class(
+                        midi_score, valid_programs=keep_programs)
 
-                    # merge_same_program_tracks(midi.instruments)
+                    # discard empty songs
+                    if len(midi.instruments) >= 1:
+                        if classes is None:
+                            # merge percussion/drums
+                            merge_tracks_per_class(
+                                midi_score, CLASSES_PERCUSSION)
 
-                    midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
-                                       str.lower(os.path.basename(midi_path)))
+                            # merge synths
+                            merge_tracks_per_class(midi_score, CLASSES_SYNTHS)
 
-                    programs = list(set([program[0]
-                                    for program in get_score_programs(midi_score)]))
+                            # merge strings
+                            merge_tracks_per_class(midi_score, CLASSES_STRINGS)
 
-                    midi_doc = {
-                        'programs': programs,
-                        'path': midi_path,
-                        'name': midi_name
-                    }
-    except Exception as err:
-        return None
+                            # merge guitar & bass
+                            merge_tracks_per_class(
+                                midi_score, CLASSES_GUITAR_BASS)
+
+                        # merge_same_program_tracks(midi.instruments)
+
+                        midi_name = re.sub(r'[^0-9a-z_]{1,}', '_',
+                                           str.lower(os.path.basename(midi_path)))
+
+                        programs = list(set([program[0]
+                                        for program in get_score_programs(midi_score)]))
+
+                        midi_doc = {
+                            'programs': programs,
+                            'path': midi_path,
+                            'name': midi_name
+                        }
+        except Exception as err:
+            pass
 
     if pba != None:
         pba.update.remote(1)
