@@ -42,6 +42,7 @@ import argparse
 import ray
 import psutil
 import gc
+import random
 from asyncio import Event
 from symusic import Score
 from ray.actor import ActorHandle
@@ -192,6 +193,8 @@ if __name__ == "__main__":
                             default=None, type=str)
     arg_parser.add_argument('-l', '--length', help='Minimum sequence length (in beats)',
                             default=16, type=int)
+    arg_parser.add_argument('-n', '--num_limit', help='Limit number of files to process (random selection)',
+                            default=None, type=int)
     arg_parser.add_argument(
         '-d', '--debug', help='Debug mode.', action='store_true', default=False)
     args = arg_parser.parse_args()
@@ -417,7 +420,7 @@ def tokenize_set(midi_doc, tokens_path, tokenizer, pba: ActorHandle, bpe=False, 
     try:
         midi = MidiFile(midi_doc['path'])
     except:
-       pass
+        pass
 
     if midi is not None:
         midi_file = Score().from_file(midi_doc['path'])
@@ -443,23 +446,21 @@ def tokenize_set(midi_doc, tokens_path, tokenizer, pba: ActorHandle, bpe=False, 
     return tokens_cfg
 
 
-def get_collection_refs(midis_path=None, midis_glob=None, classes=None, classes_req=None, minlength=16, debug=False):
-    """Pre-process and retrieves a collection of MIDI files, ready for tokenization.
-
-    :return: A dictionary containing a set of {'programs': ..., 'path': ..., 'name': ...} 
-            for each MIDI file in the collection.
-    :rtype: dict
-    """
+def get_collection_refs(midis_path=None, midis_glob=None, classes=None, classes_req=None, minlength=16, debug=False, num_limit=None):
+    """Pre-process and retrieves a collection of MIDI files, ready for tokenization."""
     if os.path.isfile(midis_path):
         midi_file_paths = [line.strip()
                            for line in open(midis_path) if line.strip()]
     else:
         midi_file_paths = list(Path(midis_path).glob(midis_glob))
 
-    logger.info(
-        'Processing collection: {coll_size} MIDI files', coll_size=len(midi_file_paths))
+    # Add random sampling with num_limit
+    if num_limit is not None and num_limit > 0:
+        random.shuffle(midi_file_paths)  # Randomize order
+        midi_file_paths = midi_file_paths[:num_limit]  # Take first N
 
-    # process MIDIs via Ray
+    logger.info('Processing collection: {coll_size} MIDI files',
+                coll_size=len(midi_file_paths))    # process MIDIs via Ray
     if not debug:
         pb = ProgressBar(len(midi_file_paths))
         actor = pb.actor
@@ -488,7 +489,8 @@ if __name__ == "__main__":
         ray.init(num_cpus=4)
 
         MIDI_COLLECTION_REFS = get_collection_refs(
-            args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length)
+            args.midis_path, args.midis_glob, args.classes, args.classes_req,
+            args.length, debug=False, num_limit=args.num_limit)
 
         for ray_midi_ref in MIDI_COLLECTION_REFS:
             midi_doc = ray.get(ray_midi_ref)
@@ -498,7 +500,8 @@ if __name__ == "__main__":
                 MIDI_PROGRAMS.append(midi_doc['programs'])
     else:
         MIDI_COLLECTION_REFS = get_collection_refs(
-            args.midis_path, args.midis_glob, args.classes, args.classes_req, args.length, args.debug)
+            args.midis_path, args.midis_glob, args.classes, args.classes_req,
+            args.length, debug=args.debug, num_limit=args.num_limit)
         MIDI_TITLES = [midi_ref['name'] for midi_ref in MIDI_COLLECTION_REFS]
         MIDI_PROGRAMS = [midi_ref['programs']
                          for midi_ref in MIDI_COLLECTION_REFS]
