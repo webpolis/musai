@@ -301,6 +301,7 @@ def get_tokenizer(params=None, algo='MMM', programs=None):
 @deco
 def process_midi(midi_path, pba: ActorHandle, classes=None, classes_req=None, minlength=16, debug=False):
     midi_doc = None
+    midi_score = None
     midi = None
 
     try:
