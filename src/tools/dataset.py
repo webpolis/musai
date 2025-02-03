@@ -3,7 +3,6 @@ import os
 import numpy as np
 from pathlib import Path
 from typing import Any, Tuple, List
-from miditok import MIDITokenizer
 from torch import LongTensor, tensor, long, stack, bfloat16
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
@@ -15,7 +14,7 @@ from utils import MaybeIsPrime
 
 class MIDIDataset(Dataset):
     def __init__(self, files_paths: List[Path], min_seq_len: int, max_seq_len: int,
-                 tokenizer: MIDITokenizer = None, no_labels=False, batches=None, epoch_steps=None):
+                 tokenizer=None, no_labels=False, batches=None, epoch_steps=None):
         self.no_labels = no_labels
         self.batches = batches
         self.epoch_steps = epoch_steps
@@ -27,24 +26,28 @@ class MIDIDataset(Dataset):
 
         for file_path in tqdm(files_paths, desc=f'Loading data: {files_paths[0].parent}'):
             with open(file_path) as json_file:
-                ids = json.load(json_file)['ids']
-                tokens = ids[0] if isinstance(
-                    ids[0], list) else ids  # first track (REMI, MMM)
-                token_ids += tokens
+                try:
+                    ids = json.load(json_file)['ids']
+                    tokens = ids[0] if isinstance(ids[0], list) else ids
+                    token_ids += tokens
 
-                i = 0
-                while i < len(tokens):
-                    if i >= len(tokens) - min_seq_len:
-                        break  # last sample is too short
+                    i = 0
+                    while i < len(tokens):
+                        # Ensure there are enough tokens to create a sample of max_seq_len + 1
+                        if i + max_seq_len + 1 > len(tokens):
+                            break  # Not enough tokens left for a full sample
 
-                    sample = LongTensor(tokens[i:i + max_seq_len])
+                        sample = LongTensor(tokens[i:i + max_seq_len + 1])
+                        self.samples.append(sample)
 
-                    self.samples.append(sample)
-
-                    i += len(self.samples[-1])  # could be replaced with self.ctx_len
+                        # Move to the next non-overlapping position
+                        i += max_seq_len + 1
+                except:
+                    pass
 
         self.data = token_ids
         self.data_size = len(self.data)
+        # Pad samples to ensure uniform length (max_seq_len + 1)
         self.samples = self.pad_samples(self.samples, 0)
 
     def __getitem__(self, idx) -> Tuple[LongTensor, LongTensor]:
@@ -67,7 +70,8 @@ class MIDIDataset(Dataset):
         length_of_first = samples[0].size()
 
         # Check if padding is necessary.
-        are_tensors_same_length = all(x.size() == length_of_first for x in samples)
+        are_tensors_same_length = all(
+            x.size() == length_of_first for x in samples)
 
         if are_tensors_same_length:
             return stack(samples, dim=0).long()
@@ -123,7 +127,8 @@ class RegularDataset(Dataset):
                     cc = aa + bb
                     self.data += f".{aa}+{bb}={cc}."
             else:
-                self.data = open(args.data_file, "r", encoding=args.data_type).read()
+                self.data = open(args.data_file, "r",
+                                 encoding=args.data_type).read()
 
             rank_zero_info("Building token list...")
 
