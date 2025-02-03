@@ -100,6 +100,7 @@ class TrainCallback(pl.Callback):
     def __init__(self, args):
         super().__init__()
         self.args = args
+        self.prefix = 'main'
 
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
         args = self.args
@@ -142,10 +143,10 @@ class TrainCallback(pl.Callback):
                 lr = (lr + args.lr_init * lr_mult) / 2
             if progress >= 1:
                 if (trainer.is_global_zero) or ('deepspeed_stage_3' in args.strategy):
-                    my_save(
-                        args, trainer,
-                        pl_module.state_dict(),
-                        f"{args.proj_dir}/rwkv-final.pth",
+                    to_save_dict = pl_module.state_dict()
+                    save_pth(
+                        to_save_dict,
+                        f'{args.proj_dir}/{self.prefix}_{args.epoch_begin + trainer.current_epoch}.pth',
                     )
                     exit(0)
         if trainer.global_step < w_step:
@@ -232,10 +233,9 @@ class TrainCallback(pl.Callback):
                 expand_factor = 2 if args.my_qa_mask > 0 else 1
                 if int(real_step) == int(args.magic_prime * expand_factor // args.real_bsz) - 1 + int(args.my_random_steps):
                     to_save_dict = pl_module.state_dict()
-                    my_save(
-                        args, trainer,
+                    save_pth(
                         to_save_dict,
-                        f"{args.proj_dir}/rwkv-final.pth",
+                        f'{args.proj_dir}/{self.prefix}_{args.epoch_begin + trainer.current_epoch}.pth',
                     )
 
     def on_train_epoch_start(self, trainer, pl_module):
@@ -262,11 +262,9 @@ class TrainCallback(pl.Callback):
                 else:
                     to_save_dict = pl_module.state_dict()
                 try:
-                    my_save(
-                        args, trainer,
+                    save_pth(
                         to_save_dict,
-                        f"{args.proj_dir}/rwkv-{args.epoch_begin +
-                                                trainer.current_epoch}.pth",
+                        f'{args.proj_dir}/{self.prefix}_{args.epoch_begin + trainer.current_epoch}.pth',
                     )
                 except Exception as e:
                     print('Error\n\n', e, '\n\n')
