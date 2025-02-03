@@ -323,30 +323,69 @@ class RWKV(nn.Module):
         return x
 
 
-def sample_logits(logits, temperature: float = 1.0, top_p: float = 1.0, top_k: int = 0):
-    probs = F.softmax(logits.float(), dim=-1)
-    sorted_probs, sorted_ids = torch.sort(probs, descending=True)
+def sample_logits(logits, temperature=1.0, top_k=None, top_p=None):
+    """
+    Samples a token from the logits after applying temperature and top_k/top_p filtering.
 
-    if top_k > 0:
-        probs[sorted_ids[top_k:]] = 0
+    Args:
+        logits (torch.Tensor): Logits for the current step, shape [vocab_size] or [batch_size, vocab_size].
+        temperature (float): Temperature value for scaling logits.
+        top_k (int, optional): Number of top tokens to keep for sampling.
+        top_p (float, optional): Cumulative probability threshold for nucleus sampling.
 
-    if top_p < 1:
-        cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
-        cutoff_index = torch.searchsorted(cumulative_probs, top_p)
-        cutoff = sorted_probs[cutoff_index]
-        probs[probs < cutoff] = 0
+    Returns:
+        int or torch.Tensor: The sampled token ID(s).
+    """
+    # Ensure logits are at least 2D
+    if logits.dim() == 1:
+        logits = logits.unsqueeze(0)  # Shape: [1, vocab_size]
 
-        if top_p > 0:
-            idx = torch.where(probs == cutoff)[0]
-            if len(idx) > 0:
-                probs[idx] = cutoff + \
-                    (top_p - torch.sum(probs).item()) / len(idx)
-                # assert abs(torch.sum(probs).item() - top_p) < 1e-6
+    # Apply temperature
+    logits = logits / temperature
 
-    if temperature != 1.0:
-        probs = probs ** (1.0 / temperature)
+    # Apply top_k filtering
+    if top_k is not None and top_k > 0:
+        top_k = min(top_k, logits.size(-1))  # Safety check
+        # Set logits not in top_k to -inf
+        # torch.topk returns the top k elements in the last dimension
+        topk_values, _ = torch.topk(logits, top_k, dim=-1)
+        cutoff = topk_values[:, -1].unsqueeze(-1)
+        logits = torch.where(
+            logits < cutoff, torch.tensor(-float('inf')).to(logits.device), logits)
 
-    return torch.multinomial(probs, num_samples=1).item()
+    # Apply top_p (nucleus) filtering
+    if top_p is not None and top_p < 1.0:
+        sorted_logits, sorted_indices = torch.sort(
+            logits, descending=True, dim=-1)
+        cumulative_probs = torch.cumsum(
+            F.softmax(sorted_logits, dim=-1), dim=-1)
+
+        # Remove tokens with cumulative probability above top_p
+        sorted_indices_to_remove = cumulative_probs > top_p
+
+        # Shift the indices to the right to keep at least one token
+        sorted_indices_to_remove[:,
+                                 1:] = sorted_indices_to_remove[:, :-1].clone()
+        sorted_indices_to_remove[:, 0] = 0
+
+        # Scatter the sorted indices to original indexing
+        indices_to_remove = sorted_indices_to_remove.scatter(
+            dim=-1, index=sorted_indices, src=sorted_indices_to_remove
+        )
+
+        logits = logits.masked_fill(indices_to_remove, -float('inf'))
+
+    # Convert logits to probabilities
+    probs = F.softmax(logits, dim=-1)
+
+    # Sample from the distribution
+    next_token = torch.multinomial(probs, num_samples=1)
+
+    # If original logits were 1D, return a single integer
+    if next_token.size(0) == 1:
+        return next_token.item()
+    else:
+        return next_token.squeeze(1)
 
 
 def repetition_penalty(scores, history, ignore_tokens=[], repetition_penalty=1.1, max_penalty=1.5, seq_len=128, decay_factor=0.85):
