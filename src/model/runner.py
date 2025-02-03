@@ -28,7 +28,7 @@ def __nop(ob):
     return ob
 
 
-MODEL_PATH = '' 
+MODEL_PATH = ''
 # MODEL_PATH = "/mnt/program/RWKV-x070-Pile-421M-20241127-ctx4096.pth"
 
 if '168M' in MODEL_PATH:
@@ -323,62 +323,30 @@ class RWKV(nn.Module):
         return x
 
 
-def sample_logits(logits, temperature=1.0, top_p=0.85, top_k=0):
-    """
-    Samples an output index from the logits using temperature, top-p, and top-k sampling.
-
-    Args:
-        logits (torch.Tensor): The input logits.
-        temperature (float, optional): The temperature parameter controlling the randomness of the sampling.
-            Lower values (e.g., < 1.0) make the sampling more deterministic, while higher values introduce more randomness.
-            Defaults to 1.0.
-        top_p (float, optional): The top-p (nucleus) parameter for selecting the most probable tokens.
-            Tokens below the cumulative probability threshold will be filtered out.
-            Should be in the range [0, 1].
-            Defaults to 0.85.
-        top_k (int, optional): The top-k parameter for selecting the k most probable tokens.
-            Tokens with lower probabilities will be filtered out.
-            Should be a non-negative integer.
-            Defaults to 0.
-
-    Returns:
-        int: The sampled output index.
-
-    Note:
-        - The input logits should have a shape of (batch_size, vocab_size).
-    """
+def sample_logits(logits, temperature: float = 1.0, top_p: float = 1.0, top_k: int = 0):
     probs = F.softmax(logits.float(), dim=-1)
-    top_k = int(top_k)
+    sorted_probs, sorted_ids = torch.sort(probs, descending=True)
 
-    if probs.device == torch.device('cpu'):
-        probs = probs.numpy()
-        sorted_ids = np.argsort(probs)
-        sorted_probs = probs[sorted_ids][::-1]
-        cumulative_probs = np.cumsum(sorted_probs)
-        cutoff = float(sorted_probs[np.argmax(cumulative_probs > top_p)])
+    if top_k > 0:
+        probs[sorted_ids[top_k:]] = 0
+
+    if top_p < 1:
+        cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+        cutoff_index = torch.searchsorted(cumulative_probs, top_p)
+        cutoff = sorted_probs[cutoff_index]
         probs[probs < cutoff] = 0
-        if top_k < len(probs) and top_k > 0:
-            probs[sorted_ids[:-top_k]] = 0
-        if temperature != 1.0:
-            probs = probs ** (1.0 / temperature)
-        probs = probs / np.sum(probs)
-        out = np.random.choice(a=len(probs), p=probs)
 
-        return int(out)
-    else:
-        sorted_ids = torch.argsort(probs)
-        sorted_probs = probs[sorted_ids]
-        sorted_probs = torch.flip(sorted_probs, dims=(0,))
-        cumulative_probs = torch.cumsum(sorted_probs, dim=-1).cpu().numpy()
-        cutoff = float(sorted_probs[np.argmax(cumulative_probs > top_p)])
-        probs[probs < cutoff] = 0
-        if top_k < len(probs) and top_k > 0:
-            probs[sorted_ids[:-top_k]] = 0
-        if temperature != 1.0:
-            probs = probs ** (1.0 / temperature)
-        out = torch.multinomial(probs, num_samples=1)[0]
+        if top_p > 0:
+            idx = torch.where(probs == cutoff)[0]
+            if len(idx) > 0:
+                probs[idx] = cutoff + \
+                    (top_p - torch.sum(probs).item()) / len(idx)
+                # assert abs(torch.sum(probs).item() - top_p) < 1e-6
 
-        return int(out)
+    if temperature != 1.0:
+        probs = probs ** (1.0 / temperature)
+
+    return torch.multinomial(probs, num_samples=1).item()
 
 
 def repetition_penalty(scores, history, ignore_tokens=[], repetition_penalty=1.1, max_penalty=1.5, seq_len=128, decay_factor=0.85):
