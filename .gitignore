@@ -6,3 +6,5 @@ lightning_logs/
 out/
 wandb/
 embvae*.txt
+dist
+testlog
