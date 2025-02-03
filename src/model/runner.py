@@ -1,6 +1,7 @@
 from tokenizers import Tokenizer
 import types
 import torch
+import os
 import numpy as np
 import torch.nn as nn
 from torch.nn import functional as F
@@ -27,7 +28,7 @@ def __nop(ob):
     return ob
 
 
-MODEL_PATH = "/mnt/e/RWKV-x070-Pile-168M-20241120-ctx4096.pth"
+MODEL_PATH = '' 
 # MODEL_PATH = "/mnt/program/RWKV-x070-Pile-421M-20241127-ctx4096.pth"
 
 if '168M' in MODEL_PATH:
@@ -44,12 +45,16 @@ elif '421M' in MODEL_PATH:
     D_AAA_LORA = 64
     D_MV_LORA = 64
     D_GATE_LORA = 128
+else:
+    D_DECAY_LORA = 64
+    D_AAA_LORA = 64
+    D_MV_LORA = 32
+    D_GATE_LORA = 128
 
 args.vocab_size = 50304  # "pile" model: 50277 padded to 50304
-tokenizer = Tokenizer.from_file("../RWKV-v4neo/20B_tokenizer.json")
 
-# DTYPE = torch.bfloat16
-DTYPE = torch.half  # better
+DTYPE = torch.bfloat16
+# DTYPE = torch.half  # better
 
 args.head_size_a = 64  # don't change
 HEAD_SIZE = args.head_size_a
@@ -65,10 +70,11 @@ MyStatic = torch.jit.script
 ########################################################################################################
 
 if USE_CUDA_KERNEL:
+    CUDA_SRC_PATH = f'{os.path.dirname(__file__)}/cuda'
 
     from torch.utils.cpp_extension import load
 
-    load(name="wkv7", sources=["cuda/wkv7_op.cpp", f"cuda/wkv7.cu"], is_python_module=False,
+    load(name="wkv7", sources=[f"{CUDA_SRC_PATH}/wkv7_op_runner.cpp", f"{CUDA_SRC_PATH}/wkv7_runner.cu"], is_python_module=False,
          verbose=True, extra_cuda_cflags=["-res-usage", "--use_fast_math", "-O3", "-Xptxas -O3", "--extra-device-vectorization", f"-D_N_={HEAD_SIZE}"])
 
     class WKV_7(torch.autograd.Function):
